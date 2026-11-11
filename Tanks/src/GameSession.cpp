@@ -1,0 +1,84 @@
+#include "tankwars/GameSession.hpp"
+#include <set>
+
+namespace tw {
+GameSession::GameSession(Config config) : config_(config), world_(config) {}
+std::optional<PlayerId> GameSession::addPlayer(std::string name, bool bot) {
+    if (phase_ != Phase::Lobby || players_.size() >= config_.playerLimit) return std::nullopt;
+    PlayerId id = 0;
+    while (std::ranges::any_of(players_, [&](const auto& p) { return p.id == id; })) ++id;
+    std::uint8_t color = 0;
+    while (std::ranges::any_of(players_, [&](const auto& p) { return p.color == color; })) ++color;
+    players_.push_back({id, color, static_cast<std::uint8_t>(config_.teams ? id % 2 : id), true, false, bot, name.substr(0, 18)});
+    return id;
+}
+void GameSession::removePlayer(PlayerId id) {
+    inputs_.at(id) = {};
+    if (phase_ == Phase::Lobby) std::erase_if(players_, [&](const auto& p) { return p.id == id; });
+    else {
+        for (auto& p : players_) if (p.id == id) { p.connected = false; p.ready = false; }
+        world_.disconnect(id);
+    }
+}
+bool GameSession::setColor(PlayerId id, std::uint8_t color) {
+    if (phase_ != Phase::Lobby || color >= 6) return false;
+    if (std::ranges::any_of(players_, [&](const auto& p) { return p.id != id && p.color == color; })) return false;
+    for (auto& p : players_) if (p.id == id) { p.color = color; p.ready = false; return true; }
+    return false;
+}
+void GameSession::setReady(PlayerId id, bool ready) {
+    if (phase_ != Phase::Lobby) return;
+    for (auto& p : players_) if (p.id == id && p.connected) p.ready = ready;
+}
+void GameSession::setInput(PlayerId id, Input input) { if (id < maxPlayers) inputs_[id] = input; }
+Input GameSession::botInput(const Tank& tank) const {
+    const Tank* target = nullptr;
+    for (const auto& other : world_.tanks()) if (other.alive() && other.team != tank.team) {
+        if (!target || length(other.position - tank.position) < length(target->position - tank.position)) target = &other;
+    }
+    if (!target) return {0, tank.aim, 0, false};
+    const auto delta = target->position - tank.pivot();
+    const float x = std::abs(delta.x), speed = tank.power;
+    const float disc = speed * speed * speed * speed - config_.gravity * (config_.gravity * x * x - 2 * delta.y * speed * speed);
+    if (disc <= 0 || x < 1) return {0, tank.aim, 1, false};
+    float angle = -std::atan((speed * speed - std::sqrt(disc)) / (config_.gravity * x));
+    if (delta.x < 0) angle = -pi - angle;
+    const float time = world_.snapshot().elapsed;
+    angle += std::sin(time * 0.37f + tank.id) * 0.035f;
+    return {0, angle, 0, time > 2.f && std::abs(angleDelta(tank.aim, angle)) < 0.06f};
+}
+void GameSession::step() {
+    if (phase_ == Phase::Lobby) {
+        if (players_.size() >= 2 && std::ranges::all_of(players_, [](const auto& p) { return p.connected && p.ready; })) {
+            std::set<unsigned> teams;
+            for (const auto& p : players_) teams.insert(p.team);
+            if (teams.size() < 2) return;
+            world_.reset(players_); phase_ = Phase::Playing; winner_ = noPlayer;
+        }
+        return;
+    }
+    if (phase_ != Phase::Playing) return;
+    for (const auto& p : players_) if (p.bot) {
+        for (const auto& t : world_.tanks()) if (t.id == p.id) inputs_[p.id] = botInput(t);
+    }
+    world_.step(inputs_);
+    std::set<unsigned> aliveTeams;
+    for (const auto& t : world_.tanks()) if (t.alive()) aliveTeams.insert(t.team);
+    const auto state = world_.snapshot();
+    if (aliveTeams.size() <= 1 && state.projectiles.empty()) {
+        phase_ = Phase::Victory;
+        for (const auto& t : world_.tanks()) if (t.alive()) { winner_ = t.id; break; }
+    }
+}
+void GameSession::rematch() {
+    if (phase_ != Phase::Victory) return;
+    phase_ = Phase::Lobby; winner_ = noPlayer; inputs_ = {};
+    std::erase_if(players_, [](const auto& p) { return !p.connected; });
+    for (auto& p : players_) p.ready = p.bot;
+}
+Snapshot GameSession::snapshot() const {
+    auto state = world_.snapshot();
+    state.players = players_; state.phase = phase_; state.winner = winner_;
+    return state;
+}
+}
