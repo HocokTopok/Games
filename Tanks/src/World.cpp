@@ -37,7 +37,7 @@ void World::explode(const Hit& hit, bool laser) {
     for (auto& tank : tanks_) {
         if (!tank.alive()) continue;
         float damage = laser ? 0.f : Physics::splashDamage(hit.position, tank, config_.weapon);
-        if (tank.id == hit.tank) damage += laser ? config_.weapon.laserDamage : config_.weapon.directDamage;
+        if (tank.id == hit.tank) damage += laser ? config_.weapon.laserHitDamage(tank.maxHp) : config_.weapon.directDamage;
         Physics::damage(tank,damage);
         if (!tank.alive()) emit(EventKind::Destroyed, tank.position, tank.id);
     }

@@ -7,10 +7,11 @@ struct WeaponSpec {
     float minPower{350}, maxPower{1100}, initialPower{850};
     float reloadSeconds{2.2f}, directDamage{48}, splashDamage{36}, blastRadius{86};
     float projectileRadius{3}, barrelLength{37}, projectileLifetime{9};
-    float laserReload{1.2f}, laserDamage{120};
+    float laserReload{1.2f}, laserDamage{40}, laserDamagePercent{4};
     float napalmReload{0.1f}, napalmDirectDamage{3}, napalmSplashDamage{2}, napalmSpread{0.075f};
     float fireRadius{60}, fireDuration{4}, fireDamagePerSecond{7};
     float burnDuration{2.5f}, burnDamagePerSecond{3};
+    float laserHitDamage(float maxHp) const { return laserDamagePercent > 0 ? maxHp * (laserDamagePercent / 100.f) : laserDamage; }
 };
 struct Config {
     float worldWidth{1600}, worldHeight{900}, groundHeight{636}, hillHeight{19};

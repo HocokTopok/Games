@@ -31,7 +31,7 @@ void run() {
     const auto shot = world.snapshot();
     require(shot.tanks[0].titan && shot.tanks[1].titan,"both players receive Titan armor");
     require(shot.lasers.size() == 1 && shot.projectiles.empty(),"laser resolves in the firing tick");
-    require(shot.tanks[0].hp == 1000 && shot.tanks[1].hp == 1000-config.weapon.laserDamage,"laser deals finite configured damage");
+    require(shot.tanks[0].hp == 1000 && shot.tanks[1].hp == 1000-config.weapon.laserHitDamage(1000),"laser deals configured percentage of maximum HP");
     require(shot.lasers[0].to.x < shot.tanks[1].position.x,"laser stops at the first tank");
 
     config.asymmetricLoadouts = true; config.worldWidth = 1000;

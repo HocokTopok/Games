@@ -46,6 +46,7 @@ bool readConfig(sf::Packet& p, Config& c) {
     c.asymmetricLoadouts = false;
     c.titanHealth = 100;
     c.laserDamageKnown = false;
+    c.weapon.laserDamagePercent = 0;
     std::uint32_t limit{};
     p >> c.worldWidth >> c.worldHeight >> c.groundHeight >> c.hillHeight >> c.gravity >> c.fixedStep
       >> c.tankSpeed >> c.turretSpeed >> c.powerSpeed >> c.tankHalfWidth >> c.tankHalfHeight >> c.spawnInset
@@ -308,7 +309,8 @@ struct Server::Impl {
             writeConfig(welcome,config,!(config.asymmetricLoadouts && peer.id == 0));
             welcome << extensionMagic << extensionVersion << (config.titanMode && peer.nativeHealth) << config.weapon.laserReload;
             writeLoadoutConfig(welcome, config);
-            if (peer.nativeHealth) welcome << healthMagic << healthVersion << config.titanHealth << config.weapon.laserDamage;
+            if (peer.nativeHealth) welcome << healthMagic << healthVersion << config.titanHealth
+                << std::min(10000.f,config.weapon.laserHitDamage(config.titanMode ? config.titanHealth : 100.f)) << config.weapon.laserDamagePercent;
             peer.channel.queue(std::move(welcome));
             return;
         }
@@ -430,6 +432,7 @@ void Client::poll() {
                             if (p && !p.endOfPacket()) {
                                 p >> impl_->config.weapon.laserDamage;
                                 impl_->config.laserDamageKnown = static_cast<bool>(p);
+                                if (p && !p.endOfPacket()) p >> impl_->config.weapon.laserDamagePercent;
                             }
                         }
                     }

@@ -24,6 +24,7 @@ Config Config::load(const std::filesystem::path& path) {
         {"splash_damage", &c.weapon.splashDamage}, {"blast_radius", &c.weapon.blastRadius},
         {"projectile_radius", &c.weapon.projectileRadius}, {"barrel_length", &c.weapon.barrelLength},
         {"projectile_lifetime", &c.weapon.projectileLifetime}, {"laser_reload", &c.weapon.laserReload}, {"laser_damage", &c.weapon.laserDamage},
+        {"laser_damage_percent", &c.weapon.laserDamagePercent},
         {"napalm_reload", &c.weapon.napalmReload}, {"napalm_direct_damage", &c.weapon.napalmDirectDamage},
         {"napalm_splash_damage", &c.weapon.napalmSplashDamage}, {"napalm_spread", &c.weapon.napalmSpread},
         {"fire_radius", &c.weapon.fireRadius}, {"fire_duration", &c.weapon.fireDuration},
@@ -48,7 +49,10 @@ Config Config::load(const std::filesystem::path& path) {
         std::string extra;
         if (!(number >> value) || number >> extra || !std::isfinite(value))
             throw std::runtime_error("Invalid config value: " + key);
-        if (auto it = values.find(key); it != values.end()) *it->second = value;
+        if (auto it = values.find(key); it != values.end()) {
+            *it->second = value;
+            if (key == "laser_damage") c.weapon.laserDamagePercent = 0;
+        }
         else if (key == "port" || key == "players" || key == "window_width" || key == "window_height" || key == "frame_limit" || key == "teams" || key == "titan_mode" || key == "asymmetric_loadouts") {
             if (value < 0 || value > 65535 || std::floor(value) != value) throw std::runtime_error("Invalid integer: " + key);
             auto n = static_cast<unsigned>(value);
@@ -79,6 +83,7 @@ void Config::validate() const {
     require(weapon.reloadSeconds >= 0.1f && weapon.reloadSeconds <= 30, "reload");
     require(weapon.laserReload >= 0.1f && weapon.laserReload <= 5, "laser reload");
     require(std::isfinite(weapon.laserDamage) && weapon.laserDamage > 0 && weapon.laserDamage <= 10000, "laser damage");
+    require(std::isfinite(weapon.laserDamagePercent) && weapon.laserDamagePercent >= 0 && weapon.laserDamagePercent <= 100, "laser damage percent");
     require(weapon.napalmReload >= 0.05f && weapon.napalmReload <= 2 && weapon.napalmSpread >= 0 && weapon.napalmSpread <= 0.3f, "napalm fire rate / spread");
     require(weapon.napalmDirectDamage >= 0 && weapon.napalmDirectDamage <= 25 && weapon.napalmSplashDamage >= 0 && weapon.napalmSplashDamage <= 25, "napalm damage");
     require(weapon.fireRadius >= 10 && weapon.fireRadius <= 150 && weapon.fireDuration >= 0.1f && weapon.fireDuration <= 15 && weapon.fireDamagePerSecond >= 0 && weapon.fireDamagePerSecond <= 50, "ground fire");
