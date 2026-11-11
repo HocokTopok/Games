@@ -31,7 +31,12 @@ Config Config::load(const std::filesystem::path& path) {
         {"fire_damage_per_second", &c.weapon.fireDamagePerSecond}, {"burn_duration", &c.weapon.burnDuration},
         {"burn_damage_per_second", &c.weapon.burnDamagePerSecond}, {"jump_speed", &c.jumpSpeed},
         {"flight_speed", &c.flightSpeed}, {"flight_acceleration", &c.flightAcceleration}, {"descent_speed", &c.descentSpeed},
-        {"titan_health", &c.titanHealth}
+        {"titan_health", &c.titanHealth},
+        {"mortar_reload", &c.weapon.mortarReload}, {"mortar_speed_scale", &c.weapon.mortarSpeedScale},
+        {"mortar_gravity_scale", &c.weapon.mortarGravityScale}, {"mortar_blast_radius", &c.weapon.mortarBlastRadius},
+        {"mortar_damage", &c.weapon.mortarDamage}, {"orb_reload", &c.weapon.orbReload},
+        {"orb_speed_scale", &c.weapon.orbSpeedScale}, {"orb_growth_seconds", &c.weapon.orbGrowthSeconds},
+        {"orb_initial_radius", &c.weapon.orbInitialRadius}, {"orb_max_radius", &c.weapon.orbMaxRadius}, {"orb_lifetime", &c.weapon.orbLifetime}
     };
     std::string line;
     unsigned lineNo = 0;
@@ -88,6 +93,10 @@ void Config::validate() const {
     require(weapon.napalmDirectDamage >= 0 && weapon.napalmDirectDamage <= 25 && weapon.napalmSplashDamage >= 0 && weapon.napalmSplashDamage <= 25, "napalm damage");
     require(weapon.fireRadius >= 10 && weapon.fireRadius <= 150 && weapon.fireDuration >= 0.1f && weapon.fireDuration <= 15 && weapon.fireDamagePerSecond >= 0 && weapon.fireDamagePerSecond <= 50, "ground fire");
     require(weapon.burnDuration >= 0.1f && weapon.burnDuration <= 15 && weapon.burnDamagePerSecond >= 0 && weapon.burnDamagePerSecond <= 50, "burning");
+    require(weapon.mortarReload >= 0.1f && weapon.mortarReload <= 10 && weapon.mortarSpeedScale >= 0.1f && weapon.mortarSpeedScale <= 1 && weapon.mortarGravityScale >= 0.05f && weapon.mortarGravityScale <= 1, "mortar ballistics");
+    require(weapon.mortarBlastRadius >= 20 && weapon.mortarBlastRadius <= 200 && weapon.mortarDamage >= 1 && weapon.mortarDamage <= 200, "mortar explosion");
+    require(weapon.orbReload >= 0.1f && weapon.orbReload <= 10 && weapon.orbSpeedScale >= 0.1f && weapon.orbSpeedScale <= 2, "orb fire rate / speed");
+    require(weapon.orbGrowthSeconds >= 0.5f && weapon.orbGrowthSeconds <= 20 && weapon.orbInitialRadius >= 2 && weapon.orbMaxRadius > weapon.orbInitialRadius && weapon.orbMaxRadius <= 60 && weapon.orbLifetime >= weapon.orbGrowthSeconds && weapon.orbLifetime <= 30, "orb growth");
     require(jumpSpeed >= 50 && jumpSpeed <= 1000 && flightSpeed >= jumpSpeed && flightSpeed <= 1200 && flightAcceleration > 0 && flightAcceleration <= 6000 && descentSpeed >= 50 && descentSpeed <= 1500, "flight");
     require(weapon.directDamage >= 0 && weapon.directDamage <= 200 && weapon.splashDamage >= 0 && weapon.splashDamage <= 200, "damage");
     require(weapon.blastRadius >= 10 && weapon.blastRadius <= 400 && weapon.projectileRadius >= 1 && weapon.projectileRadius <= 10, "blast / projectile radius");

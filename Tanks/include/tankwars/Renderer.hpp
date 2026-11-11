@@ -8,7 +8,7 @@ namespace tw {
 struct VisualSettings { bool shake{true}, particles{true}, trajectory{true}; unsigned frameLimit{120}; };
 class Renderer {
 public:
-    Renderer(sf::RenderWindow& window, const std::filesystem::path& assets);
+    Renderer(sf::RenderTarget& window, const std::filesystem::path& assets);
     void resize(const Config& config);
     void update(float dt);
     void resetEffects();
@@ -34,15 +34,22 @@ private:
     void terrain(const Config& config, const Terrain& map);
     void effects();
     void flame(Vec2 position, float size, float phase);
-    sf::RenderWindow& window_;
+    void glow(Vec2 position, float radius, sf::Color color, float opacity);
+    void ring(Vec2 position, float radius, sf::Color color, float start = 0, float sweep = 2*pi, float squash = 1, float tilt = 0);
+    void weaponProjectile(const Projectile& projectile, const Config& config, const std::vector<Vec2>& trail);
+    void addWeaponEffect(const GameEvent& event);
+    void weaponEffects();
+    sf::RenderTarget& window_;
     sf::Font font_;
     sf::View uiView_{{800, 450}, {1600, 900}}, worldView_{{800, 450}, {1600, 900}};
     struct Particle { Vec2 position, velocity; sf::Color color; float life, total, size; };
     struct Burst { Vec2 position; sf::Color color; float age{}, duration{}, radius{}; };
     struct BeamEffect { Vec2 from, to; sf::Color color; float age{}; };
+    struct WeaponEffect { Vec2 position; EventKind kind; float age{}, duration{}, radius{}, intensity{}; std::uint32_t seed{}; };
     std::vector<Particle> particles_;
     std::vector<Burst> bursts_;
     std::vector<BeamEffect> beams_;
+    std::vector<WeaponEffect> weaponEffects_;
     std::unordered_map<std::uint32_t, std::vector<Vec2>> trails_;
     std::uint32_t lastEvent_{}, lastBeam_{}, round_{};
     float time_{}, shake_{};

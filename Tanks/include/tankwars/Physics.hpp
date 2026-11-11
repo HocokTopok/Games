@@ -7,6 +7,9 @@ namespace tw {
 struct Hit { float fraction{1}; Vec2 position{}; PlayerId tank{noPlayer}; };
 namespace Physics {
 void integrate(Projectile& projectile, float dt, float gravity);
+struct FlightResult { std::optional<Hit> hit; std::array<Vec2,2> ricochets{}; unsigned ricochetCount{}; bool expired{}; };
+FlightResult advance(Projectile& projectile, float dt, const Config& config, const Terrain& map, std::span<const Tank> tanks);
+float areaDamage(Vec2 explosion, const Tank& tank, float radius, float damage, const Config& config);
 std::optional<Hit> sweep(Vec2 from, Vec2 to, float radius, const Terrain& map,
                          std::span<const Tank> tanks, PlayerId ignore = noPlayer,
                          float halfWidth = 27, float halfHeight = 12);

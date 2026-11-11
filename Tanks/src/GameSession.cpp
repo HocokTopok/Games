@@ -44,9 +44,15 @@ Input GameSession::botInput(const Tank& tank) const {
     }
     const auto delta = target->position - tank.pivot();
     const float x = std::abs(delta.x), speed = tank.power;
-    const float disc = speed * speed * speed * speed - config_.gravity * (config_.gravity * x * x - 2 * delta.y * speed * speed);
+    if (tank.weapon == WeaponKind::GrowingOrb) {
+        const float aim=std::atan2(delta.y,delta.x);
+        return {0,aim,0,std::abs(angleDelta(tank.aim,aim))<0.04f};
+    }
+    const float gravity=config_.gravity*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarGravityScale : 1.f);
+    const float launchSpeed=speed*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarSpeedScale : 1.f);
+    const float disc = std::pow(launchSpeed,4) - gravity * (gravity * x * x - 2 * delta.y * launchSpeed * launchSpeed);
     if (disc <= 0 || x < 1) return {0, tank.aim, 1, false};
-    float angle = -std::atan((speed * speed - std::sqrt(disc)) / (config_.gravity * x));
+    float angle = -std::atan((launchSpeed * launchSpeed + (tank.weapon==WeaponKind::Mortar ? 1.f : -1.f)*std::sqrt(disc)) / (gravity * x));
     if (delta.x < 0) angle = -pi - angle;
     const float time = world_.snapshot().elapsed;
     angle += std::sin(time * 0.37f + tank.id) * 0.035f;

@@ -17,14 +17,14 @@ void World::reset(const std::vector<Player>& players) {
         auto& tank = tanks_.back();
         tank.titan = config_.titanMode;
         tank.maxHp = tank.hp = tank.titan ? config_.titanHealth : 100.f;
-        tank.weapon = config_.asymmetricLoadouts && p.id == 0 ? WeaponKind::Napalm :
+        tank.weapon = config_.asymmetricLoadouts && p.id < 2 ? (p.id==0 ? WeaponKind::GrowingOrb : WeaponKind::Mortar) :
                       (config_.titanMode ? WeaponKind::Laser : WeaponKind::Cannon);
         tank.canFly = config_.asymmetricLoadouts && p.id == 1;
         if (tank.weapon == WeaponKind::Laser) tank.power = 4000;
     }
 }
-void World::emit(EventKind kind, Vec2 position, PlayerId player) {
-    events_.push_back({nextEvent_++, kind, position, player});
+void World::emit(EventKind kind, Vec2 position, PlayerId player, float radius, float intensity) {
+    events_.push_back({nextEvent_++, kind, position, player,radius,intensity});
     if (events_.size() > 128) events_.erase(events_.begin(), events_.begin() + 32);
 }
 void World::disconnect(PlayerId id) {
@@ -69,6 +69,17 @@ void World::ignite(const Hit& hit, PlayerId owner) {
         fires_.erase(oldest);
     }
     fires_.push_back({nextProjectile_++, owner, position, w.fireDuration, w.fireRadius});
+}
+void World::detonate(const Hit& hit, const Projectile& p) {
+    const bool mortar=p.weapon==WeaponKind::Mortar;
+    const float radius=mortar ? config_.weapon.mortarBlastRadius : std::max(16.f,Cannon::radius(p,config_.weapon)*2.2f);
+    const float amount=mortar ? config_.weapon.mortarDamage : Cannon::orbDamage(p.age,config_.weapon);
+    emit(mortar ? EventKind::MortarImpact : EventKind::OrbImpact,hit.position,p.owner,radius,mortar ? 1.f : amount/100.f);
+    for (auto& tank : tanks_) {
+        if (!tank.alive()) continue;
+        Physics::damage(tank,tank.id==hit.tank ? amount : Physics::areaDamage(hit.position,tank,radius,amount,config_));
+        if (!tank.alive()) emit(EventKind::Destroyed,tank.position,tank.id);
+    }
 }
 void World::updateFire(float dt) {
     for (auto& fire : fires_) fire.remaining -= dt;
@@ -141,7 +152,7 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
             tank.position = {x, floor};
             tank.bodyAngle = map_->slope(x);
         }
-        tank.aim = approachAngle(tank.aim, std::remainder(in.aim, 2 * pi), config_.turretSpeed * dt);
+        tank.aim = approachAngle(tank.aim, Cannon::firingAngle(tank.weapon,std::remainder(in.aim, 2 * pi)), config_.turretSpeed * dt);
         if (tank.weapon != WeaponKind::Laser) tank.power = std::clamp(tank.power + std::clamp(in.powerDelta, -1.f, 1.f) * config_.powerSpeed * dt,
                                                 config_.weapon.minPower, config_.weapon.maxPower);
         tank.reload = std::max(0.f, tank.reload - dt);
@@ -167,22 +178,22 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
                 emit(EventKind::Shot, tank.muzzle(config_.weapon.barrelLength), tank.id);
             } else {
                 projectiles_.push_back(Cannon::fire(tank, config_.weapon, nextProjectile_++));
-                tank.reload = config_.weapon.reloadSeconds;
+                tank.reload = Cannon::reload(tank.weapon,config_.weapon);
                 emit(EventKind::Shot, projectiles_.back().position, tank.id);
             }
             tank.recoil = 1;
         }
     }
     std::erase_if(projectiles_, [&](Projectile& p) {
-        const auto from = p.position;
-        Physics::integrate(p, dt, config_.gravity);
-        if (auto hit = Physics::sweep(from, p.position, config_.weapon.projectileRadius, *map_, tanks_,
-                p.age < 0.12f ? p.owner : noPlayer, config_.tankHalfWidth, config_.tankHalfHeight)) {
-            if (p.napalm) ignite(*hit, p.owner); else explode(*hit);
+        const auto result=Physics::advance(p,dt,config_,*map_,tanks_);
+        for (unsigned i=0;i<result.ricochetCount;++i) emit(EventKind::Ricochet,result.ricochets[i],p.owner,Cannon::radius(p,config_.weapon),Cannon::orbDamage(p.age,config_.weapon)/100.f);
+        if (result.hit) {
+            if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb) detonate(*result.hit,p);
+            else if (p.napalm) ignite(*result.hit, p.owner); else explode(*result.hit);
             return true;
         }
-        return p.age > config_.weapon.projectileLifetime || p.position.x < -100 ||
-               p.position.x > config_.worldWidth + 100 || p.position.y > config_.worldHeight + 100;
+        if (result.expired && p.weapon==WeaponKind::GrowingOrb) detonate({1,p.position,noPlayer},p);
+        return result.expired;
     });
     updateFire(dt);
 }
@@ -190,6 +201,7 @@ Snapshot World::snapshot() const {
     Snapshot s;
     s.tick = tick_; s.round = round_; s.elapsed = static_cast<float>(tick_) * config_.fixedStep;
     s.tanks = tanks_; s.projectiles = projectiles_; s.events = events_; s.lasers = lasers_; s.fires = fires_;
+    s.detailedWeapons = true;
     return s;
 }
 }

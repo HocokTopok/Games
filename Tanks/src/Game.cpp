@@ -4,9 +4,9 @@
 namespace tw {
 Game::Game(Config config, LaunchOptions options)
     : config_(config), options_(std::move(options)),
-      window_(sf::VideoMode({config.windowWidth,config.windowHeight}), "Tank Wars / Nightfall", sf::Style::Default,
+      window_(sf::VideoMode({config.windowWidth,config.windowHeight}), "Tank Wars / Nightfall " TANKWARS_VERSION, sf::Style::Default,
               sf::State::Windowed, sf::ContextSettings{.antiAliasingLevel = 4}),
-      renderer_(window_, options_.assets), localAddress_(net::localAddress()) {
+      renderer_(window_, options_.assets), audio_(options_.assets), localAddress_(net::localAddress()) {
     window_.setFramerateLimit(config.frameLimit); window_.setKeyRepeatEnabled(false);
     renderer_.settings.frameLimit = config.frameLimit; renderer_.resize(config_);
     if (options_.demo) play();
@@ -50,6 +50,7 @@ void Game::leave() {
     paused_ = false; accumulator_ = 0; inputTimer_ = 0; wheelTime_ = 0; autoReadySent_ = false;
     controls_.reset();
     screen_ = Screen::Main; status_.clear(); renderer_.resetEffects(); renderer_.resize(config_);
+    audio_.reset();
 }
 void Game::events() {
     clicked_ = false;
@@ -72,6 +73,8 @@ void Game::events() {
         }
         if (const auto* key = e->getIf<sf::Event::KeyPressed>()) {
             if (key->scancode == sf::Keyboard::Scancode::F3) showFps_ = !showFps_;
+            if (key->scancode == sf::Keyboard::Scancode::M && screen_!=Screen::Join) audio_.toggleMute();
+            if (key->scancode == sf::Keyboard::Scancode::F7) audio_.nextTrack();
             if (key->scancode == sf::Keyboard::Scancode::Enter && screen_ == Screen::Join) join();
             if (key->scancode == sf::Keyboard::Scancode::Escape) {
                 controls_.reset();
@@ -116,13 +119,16 @@ void Game::update(float dt) {
         state_ = solo_->snapshot(); renderer_.observe(state_);
     }
     window_.setMouseCursorVisible(screen_ != Screen::Playing || paused_ || state_.phase != Phase::Playing || (client_ && !client_->connected()));
+    audio_.update(dt,client_ ? client_->latest() : state_,activeConfig(),client_ ? client_->id() : 0,
+        screen_==Screen::Playing && !paused_ && window_.hasFocus() && (!client_ || client_->connected()),window_.hasFocus());
+    if (clicked_ && screen_!=Screen::Playing) audio_.uiClick();
 }
 void Game::mainMenu(Vec2 mouse) {
     renderer_.text("REAL-TIME ARTILLERY / VOL. 01",{100,105},20,Renderer::accent);
     renderer_.text("TANK",{90,150},132,Renderer::white);
     renderer_.text("WARS",{90,262},132,Renderer::white);
     renderer_.text(config_.titanMode ? "Heavy armor. Unstoppable light." : "A quiet battlefield. A perfect shot.",{101,418},25,Renderer::muted);
-    if (renderer_.button({100,483},{390,74},"PLAY",config_.titanMode ? (config_.asymmetricLoadouts ? "Titan duel / napalm vs photon" : "Titan vs Titan / photon sandbox") : "Solo duel against Sentinel",mouse,clicked_,true)) { play(); return; }
+    if (renderer_.button({100,483},{390,74},"PLAY",config_.asymmetricLoadouts ? "Gravity orb vs flying mortar" : (config_.titanMode ? "Titan vs Titan / photon sandbox" : "Solo duel against Sentinel"),mouse,clicked_,true)) { play(); return; }
     if (renderer_.button({100,572},{185,62},"HOST","Create LAN room",mouse,clicked_)) { host(); return; }
     if (renderer_.button({305,572},{185,62},"JOIN","Connect by IP",mouse,clicked_)) { screen_ = Screen::Join; status_.clear(); }
     if (renderer_.button({100,650},{185,60},"SETTINGS","Tune your view",mouse,clicked_)) { settingsReturn_ = Screen::Main; screen_ = Screen::Settings; }
@@ -131,7 +137,7 @@ void Game::mainMenu(Vec2 mouse) {
     renderer_.text("2-4 PILOTS     /     ONE BATTLEFIELD     /     NO TURNS",{1050,761},16,Renderer::muted,true);
     renderer_.line({100,813},{1500,813},{43,65,80});
     renderer_.text("LOCAL NETWORK. GLOBAL RIVALRY.",{100,836},17,Renderer::muted);
-    renderer_.text("C++23 / SFML 3",{1400,836},17,Renderer::muted,true);
+    renderer_.text("BUILD " TANKWARS_VERSION,{1400,836},17,Renderer::muted,true);
     if (!status_.empty()) renderer_.text(status_,{100,755},19,Renderer::playerColor(1));
 }
 void Game::joinMenu(Vec2 mouse) {
@@ -187,22 +193,36 @@ void Game::lobby(Vec2 mouse) {
 }
 void Game::settingsMenu(Vec2 mouse) {
     renderer_.dim(0.65f);
-    renderer_.box({430,130},{740,640},{10,21,35,250},{46,69,86});
-    renderer_.text("MAKE IT YOURS",{800,165},47,Renderer::white,true);
+    renderer_.box({430,65},{740,750},{10,21,35,250},{46,69,86});
+    renderer_.text("MAKE IT YOURS",{800,91},44,Renderer::white,true);
     auto toggle = [&](float y, const std::string& title, const std::string& detail, bool& value) {
         renderer_.text(title,{480,y},25,Renderer::white); renderer_.text(detail,{480,y+31},17,Renderer::muted);
         if (renderer_.button({950,y},{170,61},value ? "ON" : "OFF","",mouse,clicked_,value)) value = !value;
         renderer_.line({480,y+79},{1120,y+79},{35,53,71});
     };
-    toggle(265,"CAMERA SHAKE","A little impact with every explosion",renderer_.settings.shake);
-    toggle(367,"PARTICLES","Neon sparks and fragments",renderer_.settings.particles);
-    toggle(469,"AIMING GUIDE","Your trajectory stays on your screen",renderer_.settings.trajectory);
-    renderer_.text("FRAME LIMIT",{480,574},25,Renderer::white);
-    if (renderer_.button({950,571},{170,61},renderer_.settings.frameLimit ? std::to_string(renderer_.settings.frameLimit) + " FPS" : "UNLIMITED","",mouse,clicked_)) {
+    toggle(170,"CAMERA SHAKE","A little impact with every explosion",renderer_.settings.shake);
+    toggle(255,"PARTICLES","Neon sparks and fragments",renderer_.settings.particles);
+    toggle(340,"AIMING GUIDE","Your trajectory stays on your screen",renderer_.settings.trajectory);
+    renderer_.text("FRAME LIMIT",{480,448},25,Renderer::white);
+    if (renderer_.button({950,437},{170,61},renderer_.settings.frameLimit ? std::to_string(renderer_.settings.frameLimit) + " FPS" : "UNLIMITED","",mouse,clicked_)) {
         auto& limit = renderer_.settings.frameLimit; limit = limit == 60 ? 120 : (limit == 120 ? 0 : 60); window_.setFramerateLimit(limit);
     }
-    renderer_.text("Gameplay balance: config/game.cfg",{480,614},18,Renderer::muted);
-    if (renderer_.button({480,678},{640,61},"BACK","",mouse,clicked_,true)) screen_ = settingsReturn_;
+    const auto volume=[&](float y,const std::string& title,float level,bool music) {
+        renderer_.text(title,{480,y+9},25,Renderer::white);
+        if (renderer_.button({820,y},{70,57},"-","",mouse,clicked_)) {
+            if (music) audio_.setMusicVolume(level-10); else audio_.setEffectsVolume(level-10);
+        }
+        renderer_.text(std::to_string(static_cast<int>(level))+"%",{963,y+10},25,Renderer::accent,true);
+        if (renderer_.button({1050,y},{70,57},"+","",mouse,clicked_)) {
+            if (music) audio_.setMusicVolume(level+10); else audio_.setEffectsVolume(level+10);
+        }
+    };
+    volume(518,"SOUND EFFECTS",audio_.effectsVolume(),false);
+    volume(591,"MUSIC",audio_.musicVolume(),true);
+    auto track=audio_.trackName(); if (track.size()>54) track=track.substr(0,51)+"...";
+    renderer_.text(track,{480,661},16,Renderer::muted);
+    renderer_.text(audio_.muted() ? "M  UNMUTE     F7  NEXT TRACK" : "M  MUTE     F7  NEXT TRACK",{480,688},15,Renderer::accent);
+    if (renderer_.button({480,725},{640,61},"BACK","",mouse,clicked_,true)) screen_ = settingsReturn_;
 }
 void Game::matchMenu(Vec2 mouse) {
     if (client_ && !client_->connected()) return;
@@ -267,7 +287,10 @@ void Game::draw() {
         renderer_.text(client_->error(),{800,420},24,Renderer::muted,true);
         if (renderer_.button({600,500},{400,75},"MAIN MENU","Reconnect from the menu",mouse,clicked_,true)) leave();
     }
-    if (showFps_) renderer_.text(std::to_string(static_cast<int>(fps_)) + " FPS",{1490,4},16,Renderer::accent,true);
+    if (showFps_) {
+        renderer_.text(std::to_string(static_cast<int>(fps_)) + " FPS / " TANKWARS_VERSION,{1450,4},16,Renderer::accent,true);
+        if (client_ && client_->welcomed()) renderer_.text(client_->latest().detailedWeapons ? "PROJECTILE FX / FULL" : "PROJECTILE FX / LEGACY HOST",{800,54},14,client_->latest().detailedWeapons ? Renderer::accent : Renderer::playerColor(1),true);
+    }
     window_.display();
 }
 int Game::run() {

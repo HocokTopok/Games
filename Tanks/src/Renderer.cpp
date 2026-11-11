@@ -1,4 +1,5 @@
 #include "tankwars/Renderer.hpp"
+#include "tankwars/Weapon.hpp"
 #include <iomanip>
 #include <random>
 #include <sstream>
@@ -13,7 +14,7 @@ sf::FloatRect viewport(sf::Vector2u size, float aspect) {
     const float height = ratio / aspect; return {{0, (1 - height) / 2}, {1, height}};
 }
 }
-Renderer::Renderer(sf::RenderWindow& window, const std::filesystem::path& assets) : window_(window) {
+Renderer::Renderer(sf::RenderTarget& window, const std::filesystem::path& assets) : window_(window) {
     if (!font_.openFromFile(assets / "fonts/Rajdhani-SemiBold.ttf")) throw std::runtime_error("Cannot load bundled font. Keep assets beside the executable.");
 }
 sf::Color Renderer::playerColor(std::uint8_t i) {
@@ -59,15 +60,17 @@ bool Renderer::button(Vec2 p, Vec2 size, const std::string& title, const std::st
     return hovered && clicked;
 }
 void Renderer::dim(float opacity) { window_.setView(uiView_); box({0,0}, {1600,900}, {4,9,18,static_cast<std::uint8_t>(opacity * 255)}); }
-void Renderer::resetEffects() { particles_.clear(); bursts_.clear(); beams_.clear(); trails_.clear(); lastEvent_ = 0; lastBeam_ = 0; round_ = 0; shake_ = 0; }
+void Renderer::resetEffects() { particles_.clear(); bursts_.clear(); beams_.clear(); weaponEffects_.clear(); trails_.clear(); lastEvent_ = 0; lastBeam_ = 0; round_ = 0; shake_ = 0; }
 void Renderer::update(float dt) {
     time_ += dt; shake_ = std::max(0.f, shake_ - dt * 20);
     for (auto& p : particles_) { p.life -= dt; p.position += p.velocity * dt; p.velocity.y += 180 * dt; p.velocity = p.velocity * std::exp(-dt * 0.8f); }
     for (auto& b : bursts_) b.age += dt;
     for (auto& beam : beams_) beam.age += dt;
+    for (auto& effect : weaponEffects_) effect.age += dt;
     std::erase_if(particles_, [](const auto& p) { return p.life <= 0; });
     std::erase_if(bursts_, [](const auto& b) { return b.age >= b.duration; });
     std::erase_if(beams_, [](const auto& beam) { return beam.age >= 0.22f; });
+    std::erase_if(weaponEffects_, [](const auto& effect) { return effect.age >= effect.duration; });
 }
 void Renderer::observe(const Snapshot& state) {
     if (state.round != round_) { resetEffects(); round_ = state.round; }
@@ -80,12 +83,15 @@ void Renderer::observe(const Snapshot& state) {
     for (const auto& e : state.events) {
         if (e.id <= lastEvent_) continue;
         lastEvent_ = e.id;
+        if (e.kind==EventKind::MortarImpact || e.kind==EventKind::OrbImpact || e.kind==EventKind::Ricochet) { addWeaponEffect(e); continue; }
         const bool shot = e.kind == EventKind::Shot, death = e.kind == EventKind::Destroyed;
         const auto* owner = findTank(state, e.player);
         const bool napalm = e.kind == EventKind::NapalmImpact || (shot && owner && owner->weapon == WeaponKind::Napalm);
         sf::Color color = death ? sf::Color{255,150,105} : sf::Color{144,255,228};
         if (const auto* t = findTank(state, e.player)) color = playerColor(t->color);
         if (napalm) color = {255,133,42};
+        if (shot && owner && owner->weapon==WeaponKind::Mortar) color={255,158,70};
+        if (shot && owner && owner->weapon==WeaponKind::GrowingOrb) color={147,126,255};
         bursts_.push_back({e.position, color, 0, shot ? 0.17f : 0.85f, shot ? 27.f : (death ? 145.f : (napalm ? 40.f : 88.f))});
         if (!shot) shake_ = std::max(shake_, death ? 7.f : (napalm ? 0.8f : 3.5f));
         if (!settings.particles) continue;
@@ -196,7 +202,24 @@ void Renderer::tank(const Tank& t, const Config& c, float scale) {
     line(barrelEnd - direction(t.aim) * (5 * scale), barrelEnd + direction(t.aim) * scale, {181,206,211}, 7 * scale);
     circle(pivot, 10 * scale, {34,58,69}, alpha(color,200), scale);
     circle(pivot, 3 * scale, color);
-    if (t.weapon == WeaponKind::Napalm) {
+    if (t.weapon == WeaponKind::Mortar) {
+        const auto normal=direction(t.aim+pi/2);
+        line(barrelStart,barrelEnd,{38,42,51},16*scale);
+        line(barrelStart+normal*(5*scale),barrelEnd+normal*(5*scale),{255,163,83},2*scale);
+        line(barrelStart-normal*(5*scale),barrelEnd-normal*(5*scale),{120,73,57},2*scale);
+        line(barrelEnd-normal*(9*scale),barrelEnd+normal*(9*scale),{241,182,122},4*scale);
+        glow(barrelEnd,14*scale,{255,128,48},45+40*t.recoil);
+        circle(pivot,6*scale,{255,172,82});
+    } else if (t.weapon == WeaponKind::GrowingOrb) {
+        const auto normal=direction(t.aim+pi/2);
+        for (int i=0;i<3;++i) {
+            const auto coil=pivot+direction(t.aim)*((13+i*8.f-t.recoil*3)*scale);
+            line(coil-normal*(6*scale),coil+normal*(6*scale),{151,132,255},3*scale);
+        }
+        glow(barrelEnd,19*scale,{111,125,255},70+60*t.recoil);
+        ring(barrelEnd,7*scale,{172,223,255,230},time_*3,pi*1.6f,0.65f,t.aim);
+        circle(pivot,5*scale,{174,152,255});
+    } else if (t.weapon == WeaponKind::Napalm) {
         const auto normal = direction(t.aim + pi/2);
         for (int i = -1; i <= 1; ++i) {
             line(barrelStart + normal * (i * 4.f * scale), barrelEnd + normal * (i * 4.f * scale), {255,132,45}, 2 * scale);
@@ -233,6 +256,7 @@ void Renderer::flame(Vec2 position, float size, float phase) {
     }
 }
 void Renderer::effects() {
+    weaponEffects();
     for (const auto& beam : beams_) {
         const float fade = 1-beam.age/0.22f;
         line(beam.from,beam.to,alpha(beam.color,18*fade),24*fade);
@@ -278,6 +302,7 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
     }
     if (const auto* t = findTank(s,local); t && t->alive() && s.phase == Phase::Playing && settings.trajectory) {
         const auto points = Physics::trajectory(*t,c,*map,s.tanks);
+        sf::VertexArray dots(sf::PrimitiveType::Points);
         float distance = 0;
         for (std::size_t i = 1; i < points.size(); ++i) {
             const float segment = length(points[i] - points[i-1]);
@@ -285,17 +310,19 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
             for (float along = 0; along < segment; along += 1.5f) {
                 if (std::fmod(distance + along, 15.f) > 4) continue;
                 const auto p = mix(points[i-1],points[i],along / segment);
-                circle(p,0.75f,{230,243,250,115});
+                dots.append({sfv(p),{230,243,250,115}});
             }
             distance += segment;
         }
+        window_.draw(dots);
         if (!points.empty()) { circle(points.back(),5,sf::Color::Transparent,{230,243,250,115}); line(points.back() - Vec2{9,0},points.back() + Vec2{9,0},{230,243,250,65}); }
     }
     std::erase_if(trails_,[&](const auto& entry) { return std::ranges::none_of(s.projectiles,[&](const auto& p) { return p.id == entry.first; }); });
     for (const auto& p : s.projectiles) {
         auto& trail = trails_[p.id];
         if (trail.empty() || length(p.position - trail.back()) > 3) trail.push_back(p.position);
-        if (trail.size() > 20) trail.erase(trail.begin());
+        if (trail.size() > 42) trail.erase(trail.begin());
+        if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb) { weaponProjectile(p,c,trail); continue; }
         const sf::Color color = p.napalm ? sf::Color{255,135,38} : accent;
         for (std::size_t i = 1; i < trail.size(); ++i) line(trail[i-1],trail[i],alpha(color,180.f * static_cast<float>(i) / trail.size()),p.napalm ? 3 : 2);
         circle(p.position,9,alpha(color,24)); circle(p.position,5,alpha(color,95)); circle(p.position,c.weapon.projectileRadius,p.napalm ? sf::Color{255,235,156} : white);
@@ -348,14 +375,15 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool netw
         const auto color = playerColor(tank->color);
         box({510,760},{580,104},{10,21,35,240},{43,65,81});
         const bool napalm = tank->weapon == WeaponKind::Napalm, laser = tank->weapon == WeaponKind::Laser;
-        text(napalm ? "NAPALM / MACHINE GUN" : (laser ? "TITAN / PHOTON CORE" : "CANNON / 01"),{535,774},16,napalm ? sf::Color{255,160,65} : muted);
+        const bool mortar=tank->weapon==WeaponKind::Mortar, orb=tank->weapon==WeaponKind::GrowingOrb;
+        text(orb ? "GRAVITY / GROWING ORB" : (mortar ? "MORTAR / FIRESTORM" : (napalm ? "NAPALM / MACHINE GUN" : (laser ? "TITAN / PHOTON CORE" : "CANNON / 01"))),{535,774},16,orb ? sf::Color{177,155,255} : ((napalm || mortar) ? sf::Color{255,160,65} : muted));
         const float power = laser ? 1.f : std::clamp((tank->power - c.weapon.minPower) / (c.weapon.maxPower - c.weapon.minPower),0.f,1.f);
         const auto laserDamage = c.weapon.laserDamagePercent > 0 ? std::to_string(static_cast<int>(c.weapon.laserDamagePercent)) + "%" : std::to_string(static_cast<int>(c.weapon.laserDamage));
         text(laser ? "DAMAGE" : "POWER",{535,805},17,white); text(laser ? (c.laserDamageKnown ? laserDamage : "HOST") : std::to_string(static_cast<int>(power*100)) + "%",{735,801},24,color);
         box({535,842},{230,4},{39,57,70}); box({535,842},{230*power,4},color);
         line({795,783},{795,845},{42,63,79});
-        const float loaded = 1 - tank->reload / (napalm ? c.weapon.napalmReload : (laser ? c.weapon.laserReload : c.weapon.reloadSeconds));
-        text(napalm ? "AUTO / NAPALM" : (tank->reload > 0 ? "RECHARGING" : (laser ? "LASER ONLINE" : "READY TO FIRE")),{825,779},20,napalm ? sf::Color{255,160,65} : (tank->reload > 0 ? muted : color));
+        const float loaded = 1 - tank->reload / Cannon::reload(tank->weapon,c.weapon);
+        text(napalm ? "AUTO / NAPALM" : (tank->reload > 0 ? "RECHARGING" : (mortar ? "MORTAR READY" : (orb ? "ORB READY" : (laser ? "LASER ONLINE" : "READY TO FIRE")))),{825,779},20,napalm ? sf::Color{255,160,65} : (tank->reload > 0 ? muted : color));
         text(napalm ? "HOLD SPACE" : (tank->reload > 0 ? std::to_string(tank->reload).substr(0,3) + " SEC" : "SPACE"),{825,807},21,white);
         box({825,842},{235,4},{39,57,70}); box({825,842},{235*std::clamp(loaded,0.f,1.f),4},color);
     }
@@ -363,6 +391,8 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool netw
     text(tank && tank->canFly ? "DOWN   DESCEND     SPACE   FIRE" : "MOUSE   AIM     HOLD SPACE   FIRE",{42,839},17,muted);
     text("ESC  /  MENU",{1430,839},18,muted,true);
     text(tank && tank->canFly ? "LAND ON RIVAL / LETHAL" : "01 / NIGHTFALL",{1430,812},15,muted,true);
+    if (tank && tank->weapon==WeaponKind::GrowingOrb) text("2 RICOCHETS / DMG 1-100",{800,875},14,{177,155,255},true);
+    if (tank && tank->weapon==WeaponKind::Mortar) text("HIGH ARC / AREA BLAST",{800,875},14,{255,174,103},true);
     if (tank && !tank->alive() && s.phase == Phase::Playing) text("TANK DESTROYED / SPECTATING",{800,690},26,white,true);
 }
 }

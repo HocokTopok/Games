@@ -18,7 +18,9 @@ enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, 
 constexpr std::uint32_t magic = 0x54414e4b;
 constexpr std::uint32_t extensionMagic = 0x54575831;
 constexpr std::uint16_t extensionVersion = 2;
-constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1;
+constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2;
+constexpr std::uint32_t weaponMagic = 0x41525731;
+constexpr std::uint16_t weaponVersion = 1;
 constexpr std::uint32_t healthMagic = 0x48505731;
 constexpr std::uint16_t healthVersion = 1;
 constexpr std::size_t maxFrame = 65536, maxQueued = 262144;
@@ -73,6 +75,15 @@ void readLoadoutConfig(sf::Packet& p, Config& c) {
       >> c.weapon.fireRadius >> c.weapon.fireDuration >> c.weapon.fireDamagePerSecond
       >> c.weapon.burnDuration >> c.weapon.burnDamagePerSecond;
 }
+void writeWeaponConfig(sf::Packet& p, const WeaponSpec& w) {
+    p << weaponMagic << weaponVersion << w.mortarReload << w.mortarSpeedScale << w.mortarGravityScale << w.mortarBlastRadius << w.mortarDamage
+      << w.orbReload << w.orbSpeedScale << w.orbGrowthSeconds << w.orbInitialRadius << w.orbMaxRadius << w.orbLifetime;
+}
+void readWeaponConfig(sf::Packet& p, WeaponSpec& w) {
+    p >> w.mortarReload >> w.mortarSpeedScale >> w.mortarGravityScale >> w.mortarBlastRadius >> w.mortarDamage
+      >> w.orbReload >> w.orbSpeedScale >> w.orbGrowthSeconds >> w.orbInitialRadius >> w.orbMaxRadius >> w.orbLifetime;
+}
+EventKind legacyKind(EventKind kind) { return kind>=EventKind::MortarImpact ? EventKind::Impact : kind; }
 void writeState(sf::Packet& p, const Snapshot& s, bool nativeHealth) {
     p << s.tick << s.round << static_cast<std::uint8_t>(s.phase) << s.winner << s.elapsed;
     p << static_cast<std::uint8_t>(s.players.size());
@@ -83,20 +94,28 @@ void writeState(sf::Packet& p, const Snapshot& s, bool nativeHealth) {
     p << static_cast<std::uint16_t>(s.projectiles.size());
     for (const auto& v : s.projectiles) p << v.id << v.owner << v.position << v.velocity << v.age;
     p << static_cast<std::uint16_t>(s.events.size());
-    for (const auto& e : s.events) p << e.id << static_cast<std::uint8_t>(e.kind == EventKind::NapalmImpact ? EventKind::Impact : e.kind) << e.position << e.player;
+    for (const auto& e : s.events) p << e.id << static_cast<std::uint8_t>(e.kind >= EventKind::NapalmImpact ? EventKind::Impact : e.kind) << e.position << e.player;
     p << extensionMagic << extensionVersion << static_cast<std::uint8_t>(s.tanks.size());
     // Older HUDs interpret this flag as invulnerability and expect HP on a 0-100 scale.
     for (const auto& t : s.tanks) p << t.id << (t.titan && nativeHealth);
     p << static_cast<std::uint16_t>(s.lasers.size());
     for (const auto& beam : s.lasers) p << beam.id << beam.owner << beam.from << beam.to;
-    for (const auto& t : s.tanks) p << static_cast<std::uint8_t>(t.weapon) << t.canFly << t.verticalVelocity << t.burnRemaining;
+    for (const auto& t : s.tanks) p << static_cast<std::uint8_t>(t.weapon>WeaponKind::Napalm ? WeaponKind::Cannon : t.weapon) << t.canFly << t.verticalVelocity << t.burnRemaining;
     for (const auto& v : s.projectiles) p << v.napalm;
     p << static_cast<std::uint16_t>(s.fires.size());
     for (const auto& fire : s.fires) p << fire.id << fire.owner << fire.position << fire.remaining << fire.radius;
-    for (const auto& e : s.events) p << static_cast<std::uint8_t>(e.kind);
+    for (const auto& e : s.events) p << static_cast<std::uint8_t>(legacyKind(e.kind));
     if (nativeHealth) {
         p << healthMagic << healthVersion << static_cast<std::uint8_t>(s.tanks.size());
         for (const auto& tank : s.tanks) p << tank.id << tank.maxHp;
+    }
+    // Visual identity belongs to the snapshot, regardless of optional Hello capabilities.
+    // Older readers ignore this trailing block; newer readers must always receive it.
+    {
+        p << weaponMagic << weaponVersion;
+        for (const auto& tank : s.tanks) p << static_cast<std::uint8_t>(tank.weapon);
+        for (const auto& projectile : s.projectiles) p << static_cast<std::uint8_t>(projectile.weapon) << projectile.bounces;
+        for (const auto& event : s.events) p << static_cast<std::uint8_t>(event.kind) << event.radius << event.intensity;
     }
 }
 bool readState(sf::Packet& p, Snapshot& s) {
@@ -189,7 +208,7 @@ bool readState(sf::Packet& p, Snapshot& s) {
         }
     }
     if (!p) return false;
-    if (!p.endOfPacket()) {
+    while (!p.endOfPacket()) {
         p >> marker >> version;
         if (!p) return false;
         if (marker == healthMagic && version == healthVersion) {
@@ -205,7 +224,25 @@ bool readState(sf::Packet& p, Snapshot& s) {
                 if (tank == s.tanks.end() || tank->hp < 0 || tank->hp > maximum) return false;
                 tank->maxHp = maximum;
             }
-        }
+        } else if (marker == weaponMagic && version == weaponVersion) {
+            s.detailedWeapons=true;
+            for (auto& tank : s.tanks) {
+                std::uint8_t kind{}; p >> kind;
+                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::GrowingOrb)) return false;
+                tank.weapon=static_cast<WeaponKind>(kind);
+            }
+            for (auto& projectile : s.projectiles) {
+                std::uint8_t kind{}; p >> kind >> projectile.bounces;
+                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::GrowingOrb) || projectile.bounces>2) return false;
+                projectile.weapon=static_cast<WeaponKind>(kind);
+            }
+            for (auto& event : s.events) {
+                std::uint8_t kind{}; p >> kind >> event.radius >> event.intensity;
+                if (!p || kind>static_cast<std::uint8_t>(EventKind::Ricochet) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
+                    !std::isfinite(event.intensity) || event.intensity<0 || event.intensity>1) return false;
+                event.kind=static_cast<EventKind>(kind);
+            }
+        } else break;
     }
     return static_cast<bool>(p);
 }
@@ -311,6 +348,7 @@ struct Server::Impl {
             writeLoadoutConfig(welcome, config);
             if (peer.nativeHealth) welcome << healthMagic << healthVersion << config.titanHealth
                 << std::min(10000.f,config.weapon.laserHitDamage(config.titanMode ? config.titanHealth : 100.f)) << config.weapon.laserDamagePercent;
+            writeWeaponConfig(welcome,config.weapon);
             peer.channel.queue(std::move(welcome));
             return;
         }
@@ -385,6 +423,7 @@ struct Client::Impl {
     PlayerId id{noPlayer};
     Config config;
     Snapshot latest;
+    bool detailedWeaponConfig{};
     struct Timed { Clock::time_point time; Snapshot state; };
     std::deque<Timed> history;
     std::string error;
@@ -402,11 +441,11 @@ bool Client::connect(const std::string& address, unsigned short port, const std:
     }
     channel->socket->setBlocking(false); impl_->channel = std::move(channel);
     auto hello = packet(Message::Hello);
-    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << healthCapability;
+    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability);
     impl_->queue(std::move(hello));
     return true;
 }
-void Client::disconnect() { impl_->channel.reset(); impl_->id = noPlayer; impl_->history.clear(); impl_->latest = {}; }
+void Client::disconnect() { impl_->channel.reset(); impl_->id = noPlayer; impl_->history.clear(); impl_->latest = {}; impl_->detailedWeaponConfig=false; }
 void Client::poll() {
     if (!impl_->channel) return;
     auto& ch = *impl_->channel;
@@ -425,7 +464,7 @@ void Client::poll() {
                 if (valid && marker == extensionMagic && version >= 1 && version <= extensionVersion) {
                     p >> impl_->config.titanMode >> impl_->config.weapon.laserReload;
                     if (version >= 2) readLoadoutConfig(p, impl_->config);
-                    if (p && !p.endOfPacket()) {
+                    while (p && !p.endOfPacket()) {
                         p >> marker >> version;
                         if (marker == healthMagic && version == healthVersion) {
                             p >> impl_->config.titanHealth;
@@ -434,7 +473,10 @@ void Client::poll() {
                                 impl_->config.laserDamageKnown = static_cast<bool>(p);
                                 if (p && !p.endOfPacket()) p >> impl_->config.weapon.laserDamagePercent;
                             }
-                        }
+                        } else if (marker==weaponMagic && version==weaponVersion) {
+                            readWeaponConfig(p,impl_->config.weapon);
+                            impl_->detailedWeaponConfig=static_cast<bool>(p);
+                        } else break;
                     }
                     valid = static_cast<bool>(p);
                     if (valid) try { impl_->config.validate(); } catch (...) { valid = false; }
@@ -442,6 +484,10 @@ void Client::poll() {
             }
         } else if (type == static_cast<std::uint8_t>(Message::State) && impl_->id != noPlayer) {
             Snapshot s; valid = readState(p, s);
+            if (valid && impl_->detailedWeaponConfig && !s.detailedWeapons) {
+                impl_->error="Missing projectile graphics data. Restart both games using the same updated build.";
+                valid=false;
+            }
             if (valid) {
                 if (s.round != impl_->latest.round || s.phase != impl_->latest.phase) impl_->history.clear();
                 impl_->latest = s; impl_->history.push_back({Clock::now(), std::move(s)});
@@ -450,7 +496,7 @@ void Client::poll() {
         } else if (type == static_cast<std::uint8_t>(Message::Error)) {
             p >> impl_->error; ch.alive = false;
         } else valid = false;
-        if (!valid) { impl_->error = "Incompatible or invalid server message."; ch.alive = false; break; }
+        if (!valid) { if (impl_->error.empty()) impl_->error = "Incompatible or invalid server message."; ch.alive = false; break; }
     }
     ch.flush();
     if (!ch.alive && impl_->error.empty()) impl_->error = "Connection lost. Return to the menu to reconnect.";

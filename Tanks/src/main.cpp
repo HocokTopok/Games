@@ -30,6 +30,7 @@ int main(int argc, char** argv) {
         unsigned port = 0, players = 0;
         for (int i=1; i<argc; ++i) {
             const std::string arg = argv[i];
+            if (arg=="--version") { std::cout<<"Tank Wars " TANKWARS_VERSION "\n"; return 0; }
             const auto next = [&]() -> std::string { if (++i >= argc) throw std::runtime_error("Missing value for " + arg); return argv[i]; };
             if (arg == "--help" || arg == "-h") {
                 std::cout << "Tank Wars / Nightfall\n"

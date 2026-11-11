@@ -58,45 +58,53 @@ void run() {
     require(a.latest().players.size()==1,"rematch lobby cleaned");
 }
 void runLoadouts() {
-    tw::Config config; config.titanMode=true; config.titanHealth=1250;
-    config.weapon.fireRadius=72; config.flightSpeed=375; config.weapon.napalmReload=0.08f;
+    tw::Config config; config.titanMode=true; config.titanHealth=1250; config.hillHeight=0;
+    config.weapon.mortarBlastRadius=72; config.flightSpeed=375; config.weapon.orbGrowthSeconds=4;
     tw::net::Server server(config,0);
     tw::net::Client a,b;
-    require(a.connect("127.0.0.1",server.port(),"HOST"),"napalm host connects");
+    require(a.connect("127.0.0.1",server.port(),"HOST"),"orb host connects");
     until(a,b,[&]{return a.welcomed();});
-    require(b.connect("127.0.0.1",server.port(),"FLYER"),"flying guest connects");
+    require(b.connect("127.0.0.1",server.port(),"FLYER"),"mortar guest connects");
     until(a,b,[&]{return b.welcomed() && a.latest().players.size()==2;});
-    require(b.config().asymmetricLoadouts && b.config().titanMode,"loadout mode synchronized");
-    require(b.config().titanHealth == 1250,"custom finite Titan health synchronized");
-    require(b.config().gravity==config.gravity && b.config().weapon.maxPower==config.weapon.maxPower &&
-            b.config().weapon.reloadSeconds==config.weapon.reloadSeconds,"real ballistics preserved for napalm in titan mode");
-    require(b.config().weapon.fireRadius==72 && b.config().flightSpeed==375 && b.config().weapon.napalmReload==0.08f,"custom fire and flight balance synchronized");
+    require(b.config().asymmetricLoadouts && b.config().titanMode && b.config().titanHealth==1250,"loadout mode and health synchronized");
+    require(b.config().gravity==config.gravity && b.config().weapon.maxPower==config.weapon.maxPower && b.config().weapon.reloadSeconds==config.weapon.reloadSeconds,"real ballistics synchronized");
+    require(b.config().weapon.mortarBlastRadius==72 && b.config().flightSpeed==375 && b.config().weapon.orbGrowthSeconds==4,"custom mortar and orb parameters synchronized");
     a.ready(true); b.ready(true);
     until(a,b,[&]{return a.latest().phase==tw::Phase::Playing && b.latest().phase==tw::Phase::Playing;});
-    require(a.latest().tanks[0].weapon==tw::WeaponKind::Napalm && a.latest().tanks[1].weapon==tw::WeaponKind::Laser &&
-            b.latest().tanks[1].canFly && !b.latest().tanks[0].canFly,"roles survive snapshot serialization");
+    require(a.latest().detailedWeapons && b.latest().detailedWeapons && a.interpolated().detailedWeapons && b.interpolated().detailedWeapons,"both clients preserve mandatory projectile graphics data through interpolation");
+    require(a.latest().tanks[0].weapon==tw::WeaponKind::GrowingOrb && b.latest().tanks[1].weapon==tw::WeaponKind::Mortar && b.latest().tanks[1].canFly,"new weapon roles survive serialization");
     const float floor=b.latest().tanks[1].position.y;
-    bool sawProjectile=false;
-    const auto deadline=std::chrono::steady_clock::now()+1200ms;
-    while (std::chrono::steady_clock::now()<deadline) {
-        a.sendInput({0,tw::pi/2,0,true}); b.sendInput({0,-2.5f,0,false,1});
-        a.poll(); b.poll();
-        sawProjectile |= std::ranges::any_of(b.latest().projectiles,[](const auto& p){return p.napalm;});
-        std::this_thread::sleep_for(5ms);
+    bool sawOrb=false,sawMortar=false,sawBounce=false;
+    const auto observe=[&] {
+        for (const auto& p : b.latest().projectiles) {
+            const auto visual=b.interpolated();
+            const auto found=std::ranges::find(visual.projectiles,p.id,&tw::Projectile::id);
+            require(found!=visual.projectiles.end() && found->weapon==p.weapon && found->bounces==p.bounces,"interpolation keeps weapon graphics and ricochet state");
+            sawOrb |= p.weapon==tw::WeaponKind::GrowingOrb;
+            sawMortar |= p.weapon==tw::WeaponKind::Mortar;
+            sawBounce |= p.bounces>0;
+        }
+    };
+    const auto start=std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now()<start+1200ms) {
+        a.sendInput({0,-0.12f,0,true}); b.sendInput({0,-tw::pi+0.65f,0,std::chrono::steady_clock::now()<start+500ms,1});
+        a.poll(); b.poll(); observe(); std::this_thread::sleep_for(5ms);
     }
-    require(sawProjectile,"guest receives napalm projectiles");
-    require(b.latest().tanks[1].position.y<floor-150 && a.latest().tanks[1].position.y<floor-150 &&
-            a.latest().tanks[1].verticalVelocity<=0,"guest flight reaches authoritative snapshots");
-    require(!a.latest().fires.empty() && !b.latest().fires.empty() && b.latest().tanks[0].burnRemaining>0,"ground fire and burning replicate to both clients");
-    require(std::ranges::any_of(b.latest().events,[](const auto& e){return e.kind==tw::EventKind::NapalmImpact;}),"napalm impact kind synchronized");
-    require(b.latest().tanks[0].hp > 0 && b.latest().tanks[0].hp < 1250 && b.latest().tanks[0].maxHp == 1250,"napalm and fire drain finite Titan health on the server");
+    require(sawOrb && sawMortar,"both new projectile types replicate");
+    require(a.latest().tanks[1].position.y<floor-150 && b.latest().tanks[1].position.y<floor-150,"mortar tank still flies through authoritative input");
     const auto landing=std::chrono::steady_clock::now()+2500ms;
     while (std::chrono::steady_clock::now()<landing) {
         a.sendInput({0,-0.6f,0,false}); b.sendInput({0,-2.5f,0,false,-1});
-        a.poll(); b.poll(); std::this_thread::sleep_for(5ms);
+        a.poll(); b.poll(); observe(); std::this_thread::sleep_for(5ms);
         if (std::abs(b.latest().tanks[1].position.y-floor)<0.1f && b.latest().tanks[1].verticalVelocity==0) break;
     }
-    require(std::abs(b.latest().tanks[1].position.y-floor)<0.1f,"Down lands the guest through network input");
+    require(std::abs(b.latest().tanks[1].position.y-floor)<0.1f,"Down lands the mortar tank");
+    until(a,b,[&] { observe(); return std::ranges::any_of(b.latest().events,[](const auto& e){return e.kind==tw::EventKind::MortarImpact;}); });
+    require(sawBounce,"orb ricochet count replicates to the guest");
+    const auto blast=std::ranges::find_if(b.latest().events,[](const auto& e){return e.kind==tw::EventKind::MortarImpact;});
+    require(blast!=b.latest().events.end() && blast->radius==72 && blast->intensity==1,"mortar explosion animation receives its authoritative radius and intensity");
+    require(a.latest().tanks[0].maxHp==1250 && b.latest().tanks[0].maxHp==1250,"finite health still replicates with the new weapon extension");
 }
+
 }
-int main() { try { run(); runLoadouts(); std::cout<<"LAN integration passed: lobby, combat, timeout, rematch, napalm, fire, flight\n"; return 0; } catch (const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; } }
+int main() { try { run(); runLoadouts(); std::cout<<"LAN integration passed: lobby, combat, timeout, rematch, orb, mortar, ricochets, flight\n"; return 0; } catch (const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; } }

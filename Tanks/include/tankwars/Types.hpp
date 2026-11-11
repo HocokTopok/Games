@@ -36,13 +36,14 @@ struct Input {
     float lift{};
 };
 enum class Phase : std::uint8_t { Lobby, Playing, Victory };
-enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact };
-enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm };
+enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet };
+enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb };
 struct GameEvent {
     std::uint32_t id{};
     EventKind kind{};
     Vec2 position{};
     PlayerId player{noPlayer};
+    float radius{}, intensity{1};
 };
 struct Player {
     PlayerId id{};
@@ -71,6 +72,8 @@ struct Projectile {
     Vec2 position{}, velocity{};
     float age{};
     bool napalm{};
+    WeaponKind weapon{WeaponKind::Cannon};
+    std::uint8_t bounces{};
 };
 struct LaserBeam {
     std::uint32_t id{};
@@ -94,6 +97,7 @@ struct Snapshot {
     std::vector<GameEvent> events;
     std::vector<LaserBeam> lasers;
     std::vector<FirePatch> fires;
+    bool detailedWeapons{};
 };
 inline const Tank* findTank(const Snapshot& state, PlayerId id) {
     for (const auto& tank : state.tanks) if (tank.id == id) return &tank;

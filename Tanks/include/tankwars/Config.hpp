@@ -11,6 +11,8 @@ struct WeaponSpec {
     float napalmReload{0.1f}, napalmDirectDamage{3}, napalmSplashDamage{2}, napalmSpread{0.075f};
     float fireRadius{60}, fireDuration{4}, fireDamagePerSecond{7};
     float burnDuration{2.5f}, burnDamagePerSecond{3};
+    float mortarReload{1.6f}, mortarSpeedScale{0.5f}, mortarGravityScale{0.3f}, mortarBlastRadius{68}, mortarDamage{65};
+    float orbReload{0.85f}, orbSpeedScale{0.75f}, orbGrowthSeconds{5}, orbInitialRadius{4}, orbMaxRadius{30}, orbLifetime{20};
     float laserHitDamage(float maxHp) const { return laserDamagePercent > 0 ? maxHp * (laserDamagePercent / 100.f) : laserDamage; }
 };
 struct Config {
