@@ -9,7 +9,7 @@ int checks = 0;
 void check(bool ok, const char* name) { ++checks; if (!ok) throw std::runtime_error(name); }
 bool near(float a,float b,float epsilon = 0.05f) { return std::abs(a-b)<epsilon; }
 void run() {
-    tw::Config c; tw::NightfallBasin map(c);
+    tw::Config c; c.asymmetricLoadouts=false; tw::NightfallBasin map(c);
     for (int x=0;x<=1600;x+=31) check(near(map.height(static_cast<float>(x)),map.height(1600.f-x)),"symmetric terrain");
     tw::Projectile p{1,0,{100,100},{900,-400},0};
     for (int i=0;i<120;++i) tw::Physics::integrate(p,c.fixedStep,c.gravity);

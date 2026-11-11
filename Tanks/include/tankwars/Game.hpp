@@ -1,6 +1,7 @@
 #pragma once
 #include "Network.hpp"
 #include "Renderer.hpp"
+#include "Controls.hpp"
 
 namespace tw {
 struct LaunchOptions {
@@ -33,6 +34,7 @@ private:
     LaunchOptions options_;
     sf::RenderWindow window_;
     Renderer renderer_;
+    Controls controls_;
     Screen screen_{Screen::Main}, settingsReturn_{Screen::Main};
     bool paused_{}, clicked_{}, autoReadySent_{}, showFps_{};
     float accumulator_{}, inputTimer_{}, wheelTime_{}, wheelDirection_{}, time_{}, fps_{};

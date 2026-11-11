@@ -63,6 +63,10 @@ std::optional<Hit> sweep(Vec2 a, Vec2 b, float radius, const Terrain& map,
     return hit;
 }
 std::vector<Vec2> trajectory(const Tank& tank, const Config& c, const Terrain& map, std::span<const Tank> tanks) {
+    if (tank.weapon == WeaponKind::Laser) {
+        const auto laser = laserTrace(tank,c,map,tanks);
+        return {laser.from,laser.to};
+    }
     auto p = Cannon::fire(tank, c.weapon, 0);
     std::vector<Vec2> points{p.position};
     const int limit = static_cast<int>(c.weapon.projectileLifetime / c.fixedStep);
@@ -81,4 +85,23 @@ float splashDamage(Vec2 explosion, const Tank& tank, const WeaponSpec& w) {
     const float distance = std::max(0.f, length(explosion - tank.position) - 17.f);
     return w.splashDamage * std::clamp(1.f - distance / w.blastRadius, 0.f, 1.f);
 }
+LaserTrace laserTrace(const Tank& tank, const Config& c, const Terrain& map, std::span<const Tank> tanks) {
+    const Vec2 from = tank.muzzle(c.weapon.barrelLength), ray = direction(tank.aim);
+    float reach = 2 * (c.worldWidth + c.worldHeight);
+    const auto bound = [&](float value, float component, float low, float high) {
+        if (component > 0.00001f) reach = std::min(reach,std::max(0.f,(high-value)/component));
+        if (component < -0.00001f) reach = std::min(reach,std::max(0.f,(low-value)/component));
+    };
+    bound(from.x,ray.x,-20,c.worldWidth+20);
+    bound(from.y,ray.y,-80,c.worldHeight);
+    auto end = from + ray * reach;
+    auto hit = sweep(from,end,c.weapon.projectileRadius,map,tanks,tank.id,c.tankHalfWidth,c.tankHalfHeight);
+    if (hit) end = hit->position;
+    return {from,end,hit};
+}
+void damage(Tank& tank, float amount, bool lethal) {
+    if (!tank.alive() || tank.titan) return;
+    tank.hp = lethal ? 0.f : std::max(0.f,tank.hp-std::max(0.f,amount));
+}
+void crush(Tank& tank) { tank.hp = 0; }
 }

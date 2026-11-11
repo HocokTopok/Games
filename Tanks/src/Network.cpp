@@ -16,12 +16,21 @@ using Clock = std::chrono::steady_clock;
 using Status = sf::Socket::Status;
 enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, Rematch, Error };
 constexpr std::uint32_t magic = 0x54414e4b;
+constexpr std::uint32_t extensionMagic = 0x54575831;
+constexpr std::uint16_t extensionVersion = 2;
 constexpr std::size_t maxFrame = 65536, maxQueued = 262144;
 
 sf::Packet packet(Message type) { sf::Packet p; p << static_cast<std::uint8_t>(type); return p; }
 sf::Packet& operator<<(sf::Packet& p, Vec2 v) { return p << v.x << v.y; }
 sf::Packet& operator>>(sf::Packet& p, Vec2& v) { return p >> v.x >> v.y; }
-void writeConfig(sf::Packet& p, const Config& c) {
+void writeConfig(sf::Packet& p, const Config& source, bool laserGuide) {
+    auto c = source;
+    if (c.titanMode && laserGuide) {
+        // Protocol 1 clients approximate a laser with a fast, almost straight aiming guide.
+        c.gravity = 50;
+        c.weapon.minPower = 350; c.weapon.maxPower = 4000; c.weapon.initialPower = 4000;
+        c.weapon.reloadSeconds = c.weapon.laserReload;
+    }
     p << c.worldWidth << c.worldHeight << c.groundHeight << c.hillHeight << c.gravity << c.fixedStep
       << c.tankSpeed << c.turretSpeed << c.powerSpeed << c.tankHalfWidth << c.tankHalfHeight << c.spawnInset
       << c.snapshotRate << c.inputRate << c.interpolationDelay << c.inputTimeout
@@ -30,6 +39,8 @@ void writeConfig(sf::Packet& p, const Config& c) {
       << c.weapon.barrelLength << c.weapon.projectileLifetime << c.port << static_cast<std::uint32_t>(c.playerLimit) << c.teams;
 }
 bool readConfig(sf::Packet& p, Config& c) {
+    c.titanMode = false;
+    c.asymmetricLoadouts = false;
     std::uint32_t limit{};
     p >> c.worldWidth >> c.worldHeight >> c.groundHeight >> c.hillHeight >> c.gravity >> c.fixedStep
       >> c.tankSpeed >> c.turretSpeed >> c.powerSpeed >> c.tankHalfWidth >> c.tankHalfHeight >> c.spawnInset
@@ -41,6 +52,21 @@ bool readConfig(sf::Packet& p, Config& c) {
     if (!p) return false;
     try { c.validate(); return true; } catch (...) { return false; }
 }
+void writeLoadoutConfig(sf::Packet& p, const Config& c) {
+    // Restore the authoritative ballistics after the legacy laser approximation.
+    p << c.gravity << c.weapon.minPower << c.weapon.maxPower << c.weapon.initialPower << c.weapon.reloadSeconds
+      << c.asymmetricLoadouts << c.jumpSpeed << c.flightSpeed << c.flightAcceleration << c.descentSpeed
+      << c.weapon.napalmReload << c.weapon.napalmDirectDamage << c.weapon.napalmSplashDamage << c.weapon.napalmSpread
+      << c.weapon.fireRadius << c.weapon.fireDuration << c.weapon.fireDamagePerSecond
+      << c.weapon.burnDuration << c.weapon.burnDamagePerSecond;
+}
+void readLoadoutConfig(sf::Packet& p, Config& c) {
+    p >> c.gravity >> c.weapon.minPower >> c.weapon.maxPower >> c.weapon.initialPower >> c.weapon.reloadSeconds
+      >> c.asymmetricLoadouts >> c.jumpSpeed >> c.flightSpeed >> c.flightAcceleration >> c.descentSpeed
+      >> c.weapon.napalmReload >> c.weapon.napalmDirectDamage >> c.weapon.napalmSplashDamage >> c.weapon.napalmSpread
+      >> c.weapon.fireRadius >> c.weapon.fireDuration >> c.weapon.fireDamagePerSecond
+      >> c.weapon.burnDuration >> c.weapon.burnDamagePerSecond;
+}
 void writeState(sf::Packet& p, const Snapshot& s) {
     p << s.tick << s.round << static_cast<std::uint8_t>(s.phase) << s.winner << s.elapsed;
     p << static_cast<std::uint8_t>(s.players.size());
@@ -51,7 +77,16 @@ void writeState(sf::Packet& p, const Snapshot& s) {
     p << static_cast<std::uint16_t>(s.projectiles.size());
     for (const auto& v : s.projectiles) p << v.id << v.owner << v.position << v.velocity << v.age;
     p << static_cast<std::uint16_t>(s.events.size());
-    for (const auto& e : s.events) p << e.id << static_cast<std::uint8_t>(e.kind) << e.position << e.player;
+    for (const auto& e : s.events) p << e.id << static_cast<std::uint8_t>(e.kind == EventKind::NapalmImpact ? EventKind::Impact : e.kind) << e.position << e.player;
+    p << extensionMagic << extensionVersion << static_cast<std::uint8_t>(s.tanks.size());
+    for (const auto& t : s.tanks) p << t.id << t.titan;
+    p << static_cast<std::uint16_t>(s.lasers.size());
+    for (const auto& beam : s.lasers) p << beam.id << beam.owner << beam.from << beam.to;
+    for (const auto& t : s.tanks) p << static_cast<std::uint8_t>(t.weapon) << t.canFly << t.verticalVelocity << t.burnRemaining;
+    for (const auto& v : s.projectiles) p << v.napalm;
+    p << static_cast<std::uint16_t>(s.fires.size());
+    for (const auto& fire : s.fires) p << fire.id << fire.owner << fire.position << fire.remaining << fire.radius;
+    for (const auto& e : s.events) p << static_cast<std::uint8_t>(e.kind);
 }
 bool readState(sf::Packet& p, Snapshot& s) {
     std::uint8_t phase{}, count{};
@@ -91,6 +126,56 @@ bool readState(sf::Packet& p, Snapshot& s) {
         p >> e.id >> kind >> e.position >> e.player;
         if (!p || kind > 2 || !finite(e.position)) return false;
         e.kind = static_cast<EventKind>(kind);
+    }
+    if (!p) return false;
+    if (p.endOfPacket()) return true;
+    std::uint32_t marker{};
+    std::uint16_t version{};
+    p >> marker >> version;
+    if (!p) return false;
+    if (marker != extensionMagic || version < 1 || version > extensionVersion) return true;
+    p >> count;
+    if (!p || count != s.tanks.size()) return false;
+    seen = {};
+    for (unsigned i = 0; i < count; ++i) {
+        PlayerId id{}; bool titan{};
+        p >> id >> titan;
+        if (!p || id >= maxPlayers || seen[id]) return false;
+        seen[id] = true;
+        auto tank = std::ranges::find(s.tanks,id,&Tank::id);
+        if (tank == s.tanks.end()) return false;
+        tank->titan = titan;
+        tank->weapon = titan ? WeaponKind::Laser : WeaponKind::Cannon;
+    }
+    p >> n;
+    if (!p || n > 64) return false;
+    s.lasers.resize(n);
+    for (auto& beam : s.lasers) {
+        p >> beam.id >> beam.owner >> beam.from >> beam.to;
+        if (!p || beam.owner >= maxPlayers || !finite(beam.from) || !finite(beam.to)) return false;
+    }
+    if (version >= 2) {
+        for (auto& tank : s.tanks) {
+            std::uint8_t weapon{};
+            p >> weapon >> tank.canFly >> tank.verticalVelocity >> tank.burnRemaining;
+            if (!p || weapon > static_cast<std::uint8_t>(WeaponKind::Napalm) || !std::isfinite(tank.verticalVelocity) ||
+                !std::isfinite(tank.burnRemaining) || tank.burnRemaining < 0 || tank.burnRemaining > 15) return false;
+            tank.weapon = static_cast<WeaponKind>(weapon);
+        }
+        for (auto& projectile : s.projectiles) p >> projectile.napalm;
+        p >> n;
+        if (!p || n > 64) return false;
+        s.fires.resize(n);
+        for (auto& fire : s.fires) {
+            p >> fire.id >> fire.owner >> fire.position >> fire.remaining >> fire.radius;
+            if (!p || fire.owner >= maxPlayers || !finite(fire.position) || !std::isfinite(fire.remaining) ||
+                fire.remaining <= 0 || fire.remaining > 15 || !std::isfinite(fire.radius) || fire.radius < 10 || fire.radius > 150) return false;
+        }
+        for (auto& event : s.events) {
+            std::uint8_t kind{}; p >> kind;
+            if (!p || kind > static_cast<std::uint8_t>(EventKind::NapalmImpact)) return false;
+            event.kind = static_cast<EventKind>(kind);
+        }
     }
     return static_cast<bool>(p);
 }
@@ -183,15 +268,22 @@ struct Server::Impl {
                 peer.channel.queue(std::move(error)); peer.channel.flush(); peer.channel.alive = false; return;
             }
             peer.id = *id;
-            auto welcome = packet(Message::Welcome); welcome << peer.id; writeConfig(welcome, config); peer.channel.queue(std::move(welcome));
+            auto welcome = packet(Message::Welcome); welcome << peer.id;
+            writeConfig(welcome,config,!(config.asymmetricLoadouts && peer.id == 0));
+            welcome << extensionMagic << extensionVersion << config.titanMode << config.weapon.laserReload;
+            writeLoadoutConfig(welcome, config);
+            peer.channel.queue(std::move(welcome));
             return;
         }
         switch (static_cast<Message>(type)) {
         case Message::Input: {
             Input in;
             p >> in.move >> in.aim >> in.powerDelta >> in.fire;
-            if (!p || !std::isfinite(in.move) || !std::isfinite(in.aim) || !std::isfinite(in.powerDelta)) { peer.channel.alive = false; return; }
+            if (p && !p.endOfPacket()) p >> in.lift;
+            else in.lift = in.powerDelta;
+            if (!p || !std::isfinite(in.move) || !std::isfinite(in.aim) || !std::isfinite(in.powerDelta) || !std::isfinite(in.lift)) { peer.channel.alive = false; return; }
             in.move = std::clamp(in.move, -1.f, 1.f); in.powerDelta = std::clamp(in.powerDelta, -1.f, 1.f);
+            in.lift = std::clamp(in.lift, -1.f, 1.f);
             in.aim = std::remainder(in.aim, 2 * pi);
             session.setInput(peer.id, in); peer.lastInput = Clock::now(); break;
         }
@@ -281,6 +373,17 @@ void Client::poll() {
         if (type == static_cast<std::uint8_t>(Message::Welcome)) {
             p >> impl_->id;
             valid = impl_->id < maxPlayers && readConfig(p, impl_->config);
+            if (valid && !p.endOfPacket()) {
+                std::uint32_t marker{}; std::uint16_t version{};
+                p >> marker >> version;
+                valid = static_cast<bool>(p);
+                if (valid && marker == extensionMagic && version >= 1 && version <= extensionVersion) {
+                    p >> impl_->config.titanMode >> impl_->config.weapon.laserReload;
+                    if (version >= 2) readLoadoutConfig(p, impl_->config);
+                    valid = static_cast<bool>(p);
+                    if (valid) try { impl_->config.validate(); } catch (...) { valid = false; }
+                }
+            }
         } else if (type == static_cast<std::uint8_t>(Message::State) && impl_->id != noPlayer) {
             Snapshot s; valid = readState(p, s);
             if (valid) {
@@ -296,7 +399,7 @@ void Client::poll() {
     ch.flush();
     if (!ch.alive && impl_->error.empty()) impl_->error = "Connection lost. Return to the menu to reconnect.";
 }
-void Client::sendInput(Input in) { auto p = packet(Message::Input); p << in.move << in.aim << in.powerDelta << in.fire; impl_->queue(std::move(p)); }
+void Client::sendInput(Input in) { auto p = packet(Message::Input); p << in.move << in.aim << in.powerDelta << in.fire << in.lift; impl_->queue(std::move(p)); }
 void Client::ready(bool value) { auto p = packet(Message::Ready); p << value; impl_->queue(std::move(p)); }
 void Client::color(std::uint8_t value) { auto p = packet(Message::Color); p << value; impl_->queue(std::move(p)); }
 void Client::rematch() { impl_->queue(packet(Message::Rematch)); }

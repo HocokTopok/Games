@@ -15,12 +15,16 @@ public:
     const Config& config() const { return config_; }
 private:
     void emit(EventKind kind, Vec2 position, PlayerId player);
-    void explode(const Hit& hit);
+    void explode(const Hit& hit, bool lethal = false);
+    void ignite(const Hit& hit, PlayerId owner);
+    void updateFire(float dt);
     Config config_;
     std::unique_ptr<Terrain> map_;
     std::vector<Tank> tanks_;
     std::vector<Projectile> projectiles_;
     std::vector<GameEvent> events_;
+    std::vector<LaserBeam> lasers_;
+    std::vector<FirePatch> fires_;
     std::uint32_t tick_{}, round_{}, nextProjectile_{1}, nextEvent_{1};
 };
 }

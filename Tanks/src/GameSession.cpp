@@ -37,6 +37,11 @@ Input GameSession::botInput(const Tank& tank) const {
         if (!target || length(other.position - tank.position) < length(target->position - tank.position)) target = &other;
     }
     if (!target) return {0, tank.aim, 0, false};
+    if (tank.weapon == WeaponKind::Laser) {
+        const auto delta = target->pivot() - tank.pivot();
+        const float aim = std::atan2(delta.y,delta.x);
+        return {0,aim,0,std::abs(angleDelta(tank.aim,aim)) < 0.02f};
+    }
     const auto delta = target->position - tank.pivot();
     const float x = std::abs(delta.x), speed = tank.power;
     const float disc = speed * speed * speed * speed - config_.gravity * (config_.gravity * x * x - 2 * delta.y * speed * speed);
@@ -65,7 +70,8 @@ void GameSession::step() {
     std::set<unsigned> aliveTeams;
     for (const auto& t : world_.tanks()) if (t.alive()) aliveTeams.insert(t.team);
     const auto state = world_.snapshot();
-    if (aliveTeams.size() <= 1 && state.projectiles.empty()) {
+    const bool burningSurvivor = std::ranges::any_of(state.tanks, [](const auto& t) { return t.alive() && t.burnRemaining > 0; });
+    if (aliveTeams.size() <= 1 && state.projectiles.empty() && state.fires.empty() && !burningSurvivor) {
         phase_ = Phase::Victory;
         for (const auto& t : world_.tanks()) if (t.alive()) { winner_ = t.id; break; }
     }

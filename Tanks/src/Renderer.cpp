@@ -59,28 +59,39 @@ bool Renderer::button(Vec2 p, Vec2 size, const std::string& title, const std::st
     return hovered && clicked;
 }
 void Renderer::dim(float opacity) { window_.setView(uiView_); box({0,0}, {1600,900}, {4,9,18,static_cast<std::uint8_t>(opacity * 255)}); }
-void Renderer::resetEffects() { particles_.clear(); bursts_.clear(); trails_.clear(); lastEvent_ = 0; round_ = 0; shake_ = 0; }
+void Renderer::resetEffects() { particles_.clear(); bursts_.clear(); beams_.clear(); trails_.clear(); lastEvent_ = 0; lastBeam_ = 0; round_ = 0; shake_ = 0; }
 void Renderer::update(float dt) {
     time_ += dt; shake_ = std::max(0.f, shake_ - dt * 20);
     for (auto& p : particles_) { p.life -= dt; p.position += p.velocity * dt; p.velocity.y += 180 * dt; p.velocity = p.velocity * std::exp(-dt * 0.8f); }
     for (auto& b : bursts_) b.age += dt;
+    for (auto& beam : beams_) beam.age += dt;
     std::erase_if(particles_, [](const auto& p) { return p.life <= 0; });
     std::erase_if(bursts_, [](const auto& b) { return b.age >= b.duration; });
+    std::erase_if(beams_, [](const auto& beam) { return beam.age >= 0.22f; });
 }
 void Renderer::observe(const Snapshot& state) {
     if (state.round != round_) { resetEffects(); round_ = state.round; }
+    for (const auto& beam : state.lasers) {
+        if (beam.id <= lastBeam_) continue;
+        lastBeam_ = beam.id;
+        const auto* owner = findTank(state,beam.owner);
+        beams_.push_back({beam.from,beam.to,owner ? playerColor(owner->color) : accent});
+    }
     for (const auto& e : state.events) {
         if (e.id <= lastEvent_) continue;
         lastEvent_ = e.id;
         const bool shot = e.kind == EventKind::Shot, death = e.kind == EventKind::Destroyed;
+        const auto* owner = findTank(state, e.player);
+        const bool napalm = e.kind == EventKind::NapalmImpact || (shot && owner && owner->weapon == WeaponKind::Napalm);
         sf::Color color = death ? sf::Color{255,150,105} : sf::Color{144,255,228};
         if (const auto* t = findTank(state, e.player)) color = playerColor(t->color);
-        bursts_.push_back({e.position, color, 0, shot ? 0.17f : 0.85f, shot ? 27.f : (death ? 145.f : 88.f)});
-        if (!shot) shake_ = std::max(shake_, death ? 7.f : 3.5f);
+        if (napalm) color = {255,133,42};
+        bursts_.push_back({e.position, color, 0, shot ? 0.17f : 0.85f, shot ? 27.f : (death ? 145.f : (napalm ? 40.f : 88.f))});
+        if (!shot) shake_ = std::max(shake_, death ? 7.f : (napalm ? 0.8f : 3.5f));
         if (!settings.particles) continue;
         std::mt19937 random(e.id * 731 + 19);
         std::uniform_real_distribution<float> unit(0,1);
-        const int count = shot ? 10 : (death ? 100 : 54);
+        const int count = napalm ? (shot ? 4 : 12) : (shot ? 10 : (death ? 100 : 54));
         for (int i = 0; i < count; ++i) {
             const float angle = unit(random) * 2 * pi, life = 0.25f + unit(random) * (death ? 1.5f : 0.8f);
             particles_.push_back({e.position, direction(angle) * (30 + unit(random) * (death ? 380 : 220)), color, life, life, 1 + unit(random) * 2.5f});
@@ -135,7 +146,7 @@ void Renderer::scenery(const Config& c, float time, bool showcase) {
     auto map = MapFactory::create(c); terrain(c, *map);
     if (showcase) {
         Tank hero; hero.color = 0; hero.position = {c.worldWidth * 0.72f, map->height(c.worldWidth * 0.72f) - 43};
-        hero.aim = -0.42f; hero.bodyAngle = -0.015f; hero.track = time * 0.2f;
+        hero.aim = -0.42f; hero.bodyAngle = -0.015f; hero.track = time * 0.2f; hero.titan = c.titanMode;
         circle(hero.position + Vec2{0,-10}, 140, sf::Color::Transparent, {114,246,208,12});
         circle(hero.position + Vec2{0,-10}, 175, sf::Color::Transparent, {114,246,208,7});
         tank(hero, c, 3.1f);
@@ -167,18 +178,79 @@ void Renderer::tank(const Tank& t, const Config& c, float scale) {
     hull.setFillColor(t.alive() ? sf::Color{33,57,67} : sf::Color{24,30,37}); hull.setOutlineColor(t.alive() ? alpha(color,180) : muted); hull.setOutlineThickness(1); window_.draw(hull,states);
     rectangle({-17,-13}, {32,3}, alpha(color,t.alive() ? 220 : 30));
     rectangle({-11,-6}, {6,2}, {93,125,137}); rectangle({0,-6}, {13,2}, {93,125,137});
+    if (t.titan && t.alive()) {
+        rectangle({-26,-11},{13,10},{15,28,40},alpha(color,210));
+        rectangle({13,-11},{13,10},{15,28,40},alpha(color,210));
+        for (int i = 0; i < 3; ++i) {
+            rectangle({-23.f + i*3,-9},{1,6},alpha(color,130 + 80*std::sin(time_*4+i)));
+            rectangle({16.f + i*3,-9},{1,6},alpha(color,130 + 80*std::sin(time_*4+i)));
+        }
+        rectangle({-14,-18},{28,4},{63,87,98},alpha(color,130));
+    }
     if (!t.alive()) { rectangle({-8,-20}, {17,6}, {31,39,48}); return; }
     const auto pivot = t.position + rotate({0,-12}, t.bodyAngle) * scale;
     const auto barrelStart = pivot + direction(t.aim) * (3 * scale);
     const auto barrelEnd = pivot + direction(t.aim) * ((c.weapon.barrelLength - t.recoil * 5) * scale);
-    line(barrelStart, barrelEnd, {17,29,40}, 8 * scale);
+    line(barrelStart, barrelEnd, {17,29,40}, (t.titan ? 12 : 8) * scale);
     line(barrelStart, barrelEnd, alpha(color,220), 3 * scale);
     line(barrelEnd - direction(t.aim) * (5 * scale), barrelEnd + direction(t.aim) * scale, {181,206,211}, 7 * scale);
     circle(pivot, 10 * scale, {34,58,69}, alpha(color,200), scale);
     circle(pivot, 3 * scale, color);
+    if (t.weapon == WeaponKind::Napalm) {
+        const auto normal = direction(t.aim + pi/2);
+        for (int i = -1; i <= 1; ++i) {
+            line(barrelStart + normal * (i * 4.f * scale), barrelEnd + normal * (i * 4.f * scale), {255,132,45}, 2 * scale);
+        }
+        circle(pivot, 5 * scale, {255,160,48});
+    } else if (t.titan) {
+        const auto normal = direction(t.aim + pi/2);
+        for (int i = 0; i < 3; ++i) {
+            const auto coil = pivot + direction(t.aim) * ((12 + i*8.f - t.recoil*3) * scale);
+            line(coil-normal*(5*scale),coil+normal*(5*scale),alpha(color,200),2*scale);
+        }
+        circle(pivot,14*scale,sf::Color::Transparent,alpha(color,100),scale);
+        circle(pivot,7*scale,alpha(color,80)); circle(pivot,3.5f*scale,white);
+        for (int i = 0; i < 3; ++i) circle(pivot+direction(time_*1.4f+i*2*pi/3)*(17*scale),1.5f*scale,color);
+        circle(t.position,40*scale,sf::Color::Transparent,alpha(color,22+8*std::sin(time_*3)));
+    }
     line(t.position + rotate({-18,-16},t.bodyAngle) * scale, t.position + rotate({-20,-29},t.bodyAngle) * scale, alpha(color,150), scale);
 }
+void Renderer::flame(Vec2 position, float size, float phase) {
+    const float flicker = 0.8f + 0.2f * std::sin(time_ * 19 + phase);
+    const float sway = std::sin(time_ * 11 + phase) * size * 0.3f;
+    circle(position + Vec2{0,-size * 0.3f}, size * 1.15f, {255,95,20,17});
+    sf::ConvexShape shape(5);
+    shape.setPoint(0, sfv(position + Vec2{-size * 0.5f,0}));
+    shape.setPoint(1, sfv(position + Vec2{-size * 0.4f,-size * 0.5f}));
+    shape.setPoint(2, sfv(position + Vec2{sway,-size * 1.9f * flicker}));
+    shape.setPoint(3, sfv(position + Vec2{size * 0.55f,-size * 0.55f}));
+    shape.setPoint(4, sfv(position + Vec2{size * 0.5f,0}));
+    shape.setFillColor({255,100,25,205}); window_.draw(shape);
+    circle(position + Vec2{0,-size * 0.3f}, size * 0.3f, {255,218,94,235});
+    if (settings.particles) {
+        const float rise = std::fmod(time_ * 25 + phase * 9, 55.f);
+        circle(position + Vec2{sway * 2,-size - rise}, 3 + rise * 0.08f, alpha({94,91,105}, 55 - rise));
+    }
+}
 void Renderer::effects() {
+    for (const auto& beam : beams_) {
+        const float fade = 1-beam.age/0.22f;
+        line(beam.from,beam.to,alpha(beam.color,18*fade),24*fade);
+        line(beam.from,beam.to,alpha(beam.color,65*fade),11*fade);
+        line(beam.from,beam.to,alpha(beam.color,240*fade),4*fade);
+        line(beam.from,beam.to,alpha(white,250*fade),1.4f*fade);
+        const auto delta = beam.to-beam.from;
+        const auto normal = direction(std::atan2(delta.y,delta.x)+pi/2);
+        Vec2 previous = beam.from;
+        for (int i = 1; i <= 18; ++i) {
+            const float t = static_cast<float>(i)/18;
+            const auto p = mix(beam.from,beam.to,t)+normal*(std::sin(time_*80+i*4)*std::sin(t*pi)*4*fade);
+            line(previous,p,alpha(beam.color,150*fade),0.9f);
+            previous = p;
+        }
+        circle(beam.from,12*fade,alpha(beam.color,90*fade));
+        circle(beam.to,8*fade,alpha(white,220*fade));
+    }
     for (const auto& b : bursts_) {
         const float t = b.age / b.duration;
         circle(b.position, b.radius * (0.2f + 0.8f * t), alpha(b.color, (1 - t) * 12), alpha(b.color, (1 - t) * 210), 1 + (1 - t) * 3);
@@ -196,6 +268,14 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
     if (settings.shake) camera.move({std::sin(time_ * 131) * shake_, std::cos(time_ * 107) * shake_ * 0.7f});
     window_.setView(camera);
     auto map = MapFactory::create(c);
+    for (const auto& fire : s.fires) {
+        const float strength = std::min(1.f, fire.remaining / 0.6f);
+        for (float dx = -fire.radius; dx <= fire.radius; dx += 12) {
+            const float x = std::clamp(fire.position.x + dx, 0.f, c.worldWidth);
+            const float size = (9 + 7 * (1 - std::abs(dx) / fire.radius)) * strength;
+            flame({x,map->height(x) - 2}, size, static_cast<float>(fire.id) + dx);
+        }
+    }
     if (const auto* t = findTank(s,local); t && t->alive() && s.phase == Phase::Playing && settings.trajectory) {
         const auto points = Physics::trajectory(*t,c,*map,s.tanks);
         float distance = 0;
@@ -216,12 +296,21 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
         auto& trail = trails_[p.id];
         if (trail.empty() || length(p.position - trail.back()) > 3) trail.push_back(p.position);
         if (trail.size() > 20) trail.erase(trail.begin());
-        for (std::size_t i = 1; i < trail.size(); ++i) line(trail[i-1],trail[i],alpha(accent,140.f * static_cast<float>(i) / trail.size()),2);
-        circle(p.position,9,{114,246,208,16}); circle(p.position,5,{114,246,208,45}); circle(p.position,c.weapon.projectileRadius,white);
+        const sf::Color color = p.napalm ? sf::Color{255,135,38} : accent;
+        for (std::size_t i = 1; i < trail.size(); ++i) line(trail[i-1],trail[i],alpha(color,180.f * static_cast<float>(i) / trail.size()),p.napalm ? 3 : 2);
+        circle(p.position,9,alpha(color,24)); circle(p.position,5,alpha(color,95)); circle(p.position,c.weapon.projectileRadius,p.napalm ? sf::Color{255,235,156} : white);
     }
     for (const auto& t : s.tanks) {
         tank(t,c);
         if (!t.alive()) continue;
+        if (t.canFly && t.position.y < map->height(t.position.x) - c.tankHalfHeight - 2) {
+            const float exhaust = 16 + 9 * std::sin(time_ * 28 + t.id);
+            for (float dx : {-18.f,18.f}) {
+                line(t.position + Vec2{dx,8}, t.position + Vec2{dx,8 + exhaust}, {99,187,255,95}, 10);
+                line(t.position + Vec2{dx,8}, t.position + Vec2{dx,8 + exhaust * 0.7f}, {190,239,255,230}, 3);
+            }
+        }
+        if (t.burnRemaining > 0) for (int i = 0; i < 4; ++i) flame(t.position + Vec2{-19.f + i * 12,-9}, 10, t.id * 10.f + i);
         const auto col = playerColor(t.color);
         box(t.position + Vec2{-25,-49},{50,3},{33,47,60}); box(t.position + Vec2{-25,-49},{50 * t.hp / 100,3},col);
         if (t.id == local) { text("YOU",t.position + Vec2{0,-80},17,col,true); line(t.position + Vec2{-3,-58},t.position + Vec2{0,-55},col); line(t.position + Vec2{0,-55},t.position + Vec2{3,-58},col); }
@@ -249,7 +338,7 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool netw
         const auto color = playerColor(p.color);
         box({x,94},{cardWidth,83},{11,22,36,225},{39,58,75}); box({x,94},{3,83},color);
         text(p.name + (p.id == local ? " / YOU" : ""),{x+18,104},19,color);
-        text(t ? std::to_string(static_cast<int>(std::ceil(t->hp))) : "--",{x+cardWidth-42,99},28,white);
+        text(t ? (t->titan && t->alive() ? "INF" : std::to_string(static_cast<int>(std::ceil(t->hp)))) : "--",{x+cardWidth-48,99},28,white);
         box({x+18,146},{cardWidth-36,5},{38,54,69}); if (t) box({x+18,146},{(cardWidth-36)*t->hp/100,5},color);
         if (t && !t->alive()) text("OFFLINE",{x+18,154},14,muted);
     }
@@ -257,20 +346,21 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool netw
     if (tank) {
         const auto color = playerColor(tank->color);
         box({510,760},{580,104},{10,21,35,240},{43,65,81});
-        text("CANNON / 01",{535,774},16,muted);
-        const float power = (tank->power - c.weapon.minPower) / (c.weapon.maxPower - c.weapon.minPower);
-        text("POWER",{535,805},17,white); text(std::to_string(static_cast<int>(power*100)) + "%",{735,801},24,color);
+        const bool napalm = tank->weapon == WeaponKind::Napalm, laser = tank->weapon == WeaponKind::Laser;
+        text(napalm ? "NAPALM / MACHINE GUN" : (laser ? "TITAN / PHOTON CORE" : "CANNON / 01"),{535,774},16,napalm ? sf::Color{255,160,65} : muted);
+        const float power = laser ? 1.f : std::clamp((tank->power - c.weapon.minPower) / (c.weapon.maxPower - c.weapon.minPower),0.f,1.f);
+        text(laser ? "DAMAGE" : "POWER",{535,805},17,white); text(laser ? "INF" : std::to_string(static_cast<int>(power*100)) + "%",{735,801},24,color);
         box({535,842},{230,4},{39,57,70}); box({535,842},{230*power,4},color);
         line({795,783},{795,845},{42,63,79});
-        const float loaded = 1 - tank->reload / c.weapon.reloadSeconds;
-        text(tank->reload > 0 ? "RELOADING" : "READY TO FIRE",{825,779},20,tank->reload > 0 ? muted : color);
-        text(tank->reload > 0 ? std::to_string(tank->reload).substr(0,3) + " SEC" : "SPACE",{825,807},21,white);
+        const float loaded = 1 - tank->reload / (napalm ? c.weapon.napalmReload : (laser ? c.weapon.laserReload : c.weapon.reloadSeconds));
+        text(napalm ? "AUTO / NAPALM" : (tank->reload > 0 ? "RECHARGING" : (laser ? "LASER ONLINE" : "READY TO FIRE")),{825,779},20,napalm ? sf::Color{255,160,65} : (tank->reload > 0 ? muted : color));
+        text(napalm ? "HOLD SPACE" : (tank->reload > 0 ? std::to_string(tank->reload).substr(0,3) + " SEC" : "SPACE"),{825,807},21,white);
         box({825,842},{235,4},{39,57,70}); box({825,842},{235*std::clamp(loaded,0.f,1.f),4},color);
     }
-    text("A  D   MOVE     W  S / SCROLL   POWER",{42,814},17,muted);
-    text("MOUSE   AIM     SPACE   FIRE",{42,839},17,muted);
+    text(tank && tank->canFly ? "A  D   MOVE     UP   JUMP / FLY" : "A  D   MOVE     W  S / SCROLL   POWER",{42,814},17,muted);
+    text(tank && tank->canFly ? "DOWN   DESCEND     SPACE   FIRE" : "MOUSE   AIM     HOLD SPACE   FIRE",{42,839},17,muted);
     text("ESC  /  MENU",{1430,839},18,muted,true);
-    text("01 / NIGHTFALL",{1430,812},15,muted,true);
+    text(tank && tank->canFly ? "LAND ON RIVAL / LETHAL" : "01 / NIGHTFALL",{1430,812},15,muted,true);
     if (tank && !tank->alive() && s.phase == Phase::Playing) text("TANK DESTROYED / SPECTATING",{800,690},26,white,true);
 }
 }

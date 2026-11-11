@@ -48,14 +48,19 @@ void Game::join() {
 void Game::leave() {
     client_.reset(); server_.reset(); solo_.reset(); state_ = {};
     paused_ = false; accumulator_ = 0; inputTimer_ = 0; wheelTime_ = 0; autoReadySent_ = false;
+    controls_.reset();
     screen_ = Screen::Main; status_.clear(); renderer_.resetEffects(); renderer_.resize(config_);
 }
 void Game::events() {
     clicked_ = false;
     while (const auto e = window_.pollEvent()) {
+        controls_.handle(*e);
         if (e->is<sf::Event::Closed>()) window_.close();
         if (e->is<sf::Event::Resized>()) renderer_.resize(activeConfig());
-        if (e->is<sf::Event::FocusLost>() && screen_ == Screen::Playing) paused_ = true;
+        if (e->is<sf::Event::FocusLost>()) {
+            wheelTime_ = 0;
+            if (screen_ == Screen::Playing) paused_ = true;
+        }
         if (const auto* m = e->getIf<sf::Event::MouseButtonPressed>(); m && m->button == sf::Mouse::Button::Left) clicked_ = true;
         if (const auto* wheel = e->getIf<sf::Event::MouseWheelScrolled>(); wheel && wheel->wheel == sf::Mouse::Wheel::Vertical) {
             wheelDirection_ = wheel->delta > 0 ? 1.f : -1.f; wheelTime_ = 0.16f * std::abs(wheel->delta);
@@ -66,9 +71,10 @@ void Game::events() {
             else if (c >= 32 && c < 127 && address_.size() < 80) address_ += static_cast<char>(c);
         }
         if (const auto* key = e->getIf<sf::Event::KeyPressed>()) {
-            if (key->code == sf::Keyboard::Key::F3) showFps_ = !showFps_;
-            if (key->code == sf::Keyboard::Key::Enter && screen_ == Screen::Join) join();
-            if (key->code == sf::Keyboard::Key::Escape) {
+            if (key->scancode == sf::Keyboard::Scancode::F3) showFps_ = !showFps_;
+            if (key->scancode == sf::Keyboard::Scancode::Enter && screen_ == Screen::Join) join();
+            if (key->scancode == sf::Keyboard::Scancode::Escape) {
+                controls_.reset();
                 if (screen_ == Screen::Settings) screen_ = settingsReturn_;
                 else if (screen_ == Screen::Playing) paused_ = !paused_;
                 else if (screen_ == Screen::Join || screen_ == Screen::Lobby) leave();
@@ -83,11 +89,8 @@ Input Game::input() const {
     if (paused_ || screen_ != Screen::Playing || !window_.hasFocus() || state_.phase != Phase::Playing) return result;
     const auto mouse = renderer_.worldMouse(sf::Mouse::getPosition(window_));
     if (tank) { const auto delta = mouse - tank->pivot(); result.aim = std::atan2(delta.y,delta.x); }
-    using Key = sf::Keyboard::Scancode;
-    result.move = static_cast<float>(sf::Keyboard::isKeyPressed(Key::D)) - static_cast<float>(sf::Keyboard::isKeyPressed(Key::A));
-    result.powerDelta = static_cast<float>(sf::Keyboard::isKeyPressed(Key::W)) - static_cast<float>(sf::Keyboard::isKeyPressed(Key::S));
+    result = controls_.sample(result.aim);
     if (wheelTime_ > 0) result.powerDelta = std::clamp(result.powerDelta + wheelDirection_,-1.f,1.f);
-    result.fire = sf::Keyboard::isKeyPressed(Key::Space);
     return result;
 }
 void Game::update(float dt) {
@@ -118,8 +121,8 @@ void Game::mainMenu(Vec2 mouse) {
     renderer_.text("REAL-TIME ARTILLERY / VOL. 01",{100,105},20,Renderer::accent);
     renderer_.text("TANK",{90,150},132,Renderer::white);
     renderer_.text("WARS",{90,262},132,Renderer::white);
-    renderer_.text("A quiet battlefield. A perfect shot.",{101,418},25,Renderer::muted);
-    if (renderer_.button({100,483},{390,74},"PLAY","Solo duel against Sentinel",mouse,clicked_,true)) { play(); return; }
+    renderer_.text(config_.titanMode ? "Infinite armor. Unstoppable light." : "A quiet battlefield. A perfect shot.",{101,418},25,Renderer::muted);
+    if (renderer_.button({100,483},{390,74},"PLAY",config_.titanMode ? (config_.asymmetricLoadouts ? "Titan duel / napalm vs photon" : "Titan vs Titan / photon sandbox") : "Solo duel against Sentinel",mouse,clicked_,true)) { play(); return; }
     if (renderer_.button({100,572},{185,62},"HOST","Create LAN room",mouse,clicked_)) { host(); return; }
     if (renderer_.button({305,572},{185,62},"JOIN","Connect by IP",mouse,clicked_)) { screen_ = Screen::Join; status_.clear(); }
     if (renderer_.button({100,650},{185,60},"SETTINGS","Tune your view",mouse,clicked_)) { settingsReturn_ = Screen::Main; screen_ = Screen::Settings; }
@@ -149,7 +152,7 @@ void Game::lobby(Vec2 mouse) {
     renderer_.text(server_ ? "YOUR ROOM" : "CONNECTED",{100,80},56,Renderer::white);
     const std::string endpoint = server_ ? localAddress_ + ":" + std::to_string(server_->port()) : address_;
     renderer_.text("LAN  /  " + endpoint,{103,154},25,Renderer::accent);
-    renderer_.text("Choose a unique color. The match begins when everyone is ready.",{103,201},23,Renderer::muted);
+    renderer_.text(activeConfig().titanMode ? (activeConfig().asymmetricLoadouts ? "TITAN DUEL / Napalm host, airborne photon rival. Land on a rival to destroy it." : "TITAN MODE / Infinite armor and photon cannons for every pilot.") : "Choose a unique color. The match begins when everyone is ready.",{103,201},23,Renderer::muted);
     const auto local = client_ ? client_->id() : noPlayer;
     const Player* me = nullptr;
     const unsigned limit = activeConfig().playerLimit;

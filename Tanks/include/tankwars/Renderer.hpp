@@ -33,15 +33,18 @@ private:
     void tank(const Tank& tank, const Config& config, float scale = 1);
     void terrain(const Config& config, const Terrain& map);
     void effects();
+    void flame(Vec2 position, float size, float phase);
     sf::RenderWindow& window_;
     sf::Font font_;
     sf::View uiView_{{800, 450}, {1600, 900}}, worldView_{{800, 450}, {1600, 900}};
     struct Particle { Vec2 position, velocity; sf::Color color; float life, total, size; };
     struct Burst { Vec2 position; sf::Color color; float age{}, duration{}, radius{}; };
+    struct BeamEffect { Vec2 from, to; sf::Color color; float age{}; };
     std::vector<Particle> particles_;
     std::vector<Burst> bursts_;
+    std::vector<BeamEffect> beams_;
     std::unordered_map<std::uint32_t, std::vector<Vec2>> trails_;
-    std::uint32_t lastEvent_{}, round_{};
+    std::uint32_t lastEvent_{}, lastBeam_{}, round_{};
     float time_{}, shake_{};
 };
 }
