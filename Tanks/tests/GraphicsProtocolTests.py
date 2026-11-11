@@ -5,6 +5,8 @@ import struct
 import subprocess
 import sys
 import time
+import tempfile
+from pathlib import Path
 
 
 class Reader:
@@ -62,6 +64,8 @@ def state(data):
                 assert weapons[:2] == [4, 3], weapons
             projectiles = [r.read("BB") for _ in range(projectile_count)]
             events = [(r.read("B"), r.read("<f"), r.read("<f")) for _ in range(event_count)]
+        elif marker == 0x42465731:
+            break  # Battlefield extension is exercised by battlefield_network.
         else:
             raise AssertionError(f"Unknown graphics block {marker:x}")
     assert detailed, "Server omitted projectile graphics because Hello lacked the weapon capability"
@@ -78,7 +82,10 @@ def main():
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
-    server = subprocess.Popen([sys.argv[1], "server", str(port), sys.argv[2]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    config_file = tempfile.NamedTemporaryFile(mode="w", suffix=".cfg")
+    config_file.write(Path(sys.argv[2]).read_text().replace("loadout_selection = 1", "loadout_selection = 0"))
+    config_file.flush()
+    server = subprocess.Popen([sys.argv[1], "server", str(port), config_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     peers = []
     try:
         assert server.stdout.readline().startswith(b"READY"), "Test server failed to start"
@@ -124,6 +131,7 @@ def main():
             peer.close()
         server.terminate()
         server.wait(timeout=3)
+        config_file.close()
 
 
 if __name__ == "__main__":

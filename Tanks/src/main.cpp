@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     try {
         tw::LaunchOptions options;
         const auto root = resourceRoot(argv[0]); options.assets = root / "assets"; options.config = root / "config/game.cfg";
-        unsigned port = 0, players = 0;
+        unsigned port = 0, players = 0, battlefield = 0;
         for (int i=1; i<argc; ++i) {
             const std::string arg = argv[i];
             if (arg=="--version") { std::cout<<"Tank Wars " TANKWARS_VERSION "\n"; return 0; }
@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
                 std::cout << "Tank Wars / Nightfall\n"
                     "  --host                Create a LAN room\n  --join IP[:PORT]      Join a LAN room\n"
                     "  --port N              Listen/connect port (53000)\n  --players N           Room capacity: 2-4\n"
-                    "  --demo                Start a solo duel\n  --ready               Automatically ready in lobby\n"
+                    "  --map N               Demo battlefield: 1-4\n  --demo                Start a solo duel\n  --ready               Automatically ready in lobby\n"
                     "  --server              Headless authoritative server\n  --seconds N           Headless server duration\n"
                     "  --config FILE         Gameplay configuration\n  --assets DIR          Bundled assets directory\n"
                     "  --frames N            Exit after N rendered frames\n  --screenshot FILE     Capture final frame (with --frames)\n"; return 0;
@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
             else if (arg == "--join") options.join = next();
             else if (arg == "--port") port = number(next(),"--port",65535);
             else if (arg == "--players") players = number(next(),"--players",4);
+            else if (arg == "--map") battlefield = number(next(),"--map",4);
             else if (arg == "--demo") options.demo = true;
             else if (arg == "--ready") options.ready = true;
             else if (arg == "--server") options.server = true;
@@ -59,6 +60,7 @@ int main(int argc, char** argv) {
         if (modes > 1) throw std::runtime_error("Choose one of --host, --join, --demo, --server");
         if (!options.screenshot.empty() && !options.frames) throw std::runtime_error("--screenshot requires --frames");
         auto config = tw::Config::load(options.config);
+        if (battlefield) config=tw::MapFactory::preset(config,static_cast<std::uint8_t>(battlefield-1));
         if (port) config.port = static_cast<unsigned short>(port);
         if (players) config.playerLimit = players;
         config.validate();

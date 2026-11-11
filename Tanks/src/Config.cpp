@@ -35,6 +35,7 @@ Config Config::load(const std::filesystem::path& path) {
         {"mortar_reload", &c.weapon.mortarReload}, {"mortar_speed_scale", &c.weapon.mortarSpeedScale},
         {"mortar_gravity_scale", &c.weapon.mortarGravityScale}, {"mortar_blast_radius", &c.weapon.mortarBlastRadius},
         {"mortar_damage", &c.weapon.mortarDamage}, {"orb_reload", &c.weapon.orbReload},
+        {"ricochet_reload", &c.weapon.ricochetReload}, {"ricochet_speed_scale", &c.weapon.ricochetSpeedScale},
         {"orb_speed_scale", &c.weapon.orbSpeedScale}, {"orb_growth_seconds", &c.weapon.orbGrowthSeconds},
         {"orb_initial_radius", &c.weapon.orbInitialRadius}, {"orb_max_radius", &c.weapon.orbMaxRadius}, {"orb_lifetime", &c.weapon.orbLifetime}
     };
@@ -58,9 +59,11 @@ Config Config::load(const std::filesystem::path& path) {
             *it->second = value;
             if (key == "laser_damage") c.weapon.laserDamagePercent = 0;
         }
-        else if (key == "port" || key == "players" || key == "window_width" || key == "window_height" || key == "frame_limit" || key == "teams" || key == "titan_mode" || key == "asymmetric_loadouts") {
+        else if (key == "port" || key == "players" || key == "window_width" || key == "window_height" || key == "frame_limit" || key == "teams" || key == "titan_mode" || key == "asymmetric_loadouts" || key == "loadout_selection" || key == "map_id") {
             if (value < 0 || value > 65535 || std::floor(value) != value) throw std::runtime_error("Invalid integer: " + key);
             auto n = static_cast<unsigned>(value);
+            if (key == "loadout_selection") { if (n > 1) throw std::runtime_error("loadout_selection must be 0 or 1"); c.loadoutSelection = n == 1; }
+            if (key == "map_id") { if (n > 3) throw std::runtime_error("map_id must be 0-3"); c.mapId = static_cast<std::uint8_t>(n); }
             if (key == "port") c.port = static_cast<unsigned short>(n);
             if (key == "players") c.playerLimit = n;
             if (key == "window_width") c.windowWidth = n;
@@ -77,7 +80,7 @@ Config Config::load(const std::filesystem::path& path) {
 void Config::validate() const {
     const auto require = [](bool ok, const char* what) { if (!ok) throw std::runtime_error(std::string("Invalid config: ") + what); };
     require(worldWidth >= 1000 && worldWidth <= 4000 && worldHeight >= 600 && worldHeight <= 2000, "world dimensions");
-    require(groundHeight > 200 && groundHeight < worldHeight - 80 && hillHeight >= 0 && hillHeight < 60, "terrain");
+    require(groundHeight > 200 && groundHeight < worldHeight - 80 && hillHeight >= 0 && hillHeight <= 300 && groundHeight + hillHeight + 40 < worldHeight, "terrain");
     require(gravity >= 50 && gravity <= 3000 && fixedStep >= 1.f / 300.f && fixedStep <= 1.f / 30.f, "gravity / time step");
     require(tankSpeed > 0 && tankSpeed <= 300 && turretSpeed > 0 && turretSpeed <= 20 && powerSpeed > 0 && powerSpeed <= 2000, "tank speeds");
     require(tankHalfWidth >= 15 && tankHalfWidth <= 40 && tankHalfHeight >= 8 && tankHalfHeight <= 22, "tank bounds");
@@ -95,6 +98,8 @@ void Config::validate() const {
     require(weapon.burnDuration >= 0.1f && weapon.burnDuration <= 15 && weapon.burnDamagePerSecond >= 0 && weapon.burnDamagePerSecond <= 50, "burning");
     require(weapon.mortarReload >= 0.1f && weapon.mortarReload <= 10 && weapon.mortarSpeedScale >= 0.1f && weapon.mortarSpeedScale <= 1 && weapon.mortarGravityScale >= 0.05f && weapon.mortarGravityScale <= 1, "mortar ballistics");
     require(weapon.mortarBlastRadius >= 20 && weapon.mortarBlastRadius <= 200 && weapon.mortarDamage >= 1 && weapon.mortarDamage <= 200, "mortar explosion");
+    require(mapId < 4, "map ID");
+    require(weapon.ricochetReload >= 0.1f && weapon.ricochetReload <= 10 && weapon.ricochetSpeedScale >= 0.5f && weapon.ricochetSpeedScale <= 3, "ricochet gun");
     require(weapon.orbReload >= 0.1f && weapon.orbReload <= 10 && weapon.orbSpeedScale >= 0.1f && weapon.orbSpeedScale <= 2, "orb fire rate / speed");
     require(weapon.orbGrowthSeconds >= 0.5f && weapon.orbGrowthSeconds <= 20 && weapon.orbInitialRadius >= 2 && weapon.orbMaxRadius > weapon.orbInitialRadius && weapon.orbMaxRadius <= 60 && weapon.orbLifetime >= weapon.orbGrowthSeconds && weapon.orbLifetime <= 30, "orb growth");
     require(jumpSpeed >= 50 && jumpSpeed <= 1000 && flightSpeed >= jumpSpeed && flightSpeed <= 1200 && flightAcceleration > 0 && flightAcceleration <= 6000 && descentSpeed >= 50 && descentSpeed <= 1500, "flight");

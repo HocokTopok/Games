@@ -44,7 +44,7 @@ void run() {
     input[1]={0,-tw::pi+0.65f,0,true}; mortarWorld.step(input); input[1].fire=false;
     auto shot=mortarWorld.snapshot().projectiles.at(0);
     require(shot.weapon==tw::WeaponKind::Mortar && mortarWorld.snapshot().lasers.empty(),"guest launches a mortar shell instead of a laser");
-    require(config.weapon.mortarReload>config.weapon.laserReload && config.weapon.mortarBlastRadius>config.tankHalfWidth*2,"mortar reload is longer and explosion radius exceeds tank length");
+    require(config.weapon.mortarReload==1.6f && config.weapon.laserReload==2.4f && config.weapon.mortarBlastRadius>config.tankHalfWidth*2,"mortar unchanged, railgun fires half as often, and mortar radius exceeds tank length");
     const auto mortarGuide=tw::Physics::trajectory(mortarWorld.tanks()[1],config,mortarWorld.map(),mortarWorld.tanks());
     do { result=tw::Physics::advance(shot,config.fixedStep,config,mortarWorld.map(),mortarWorld.tanks()); } while (!result.hit && !result.expired);
     require(result.hit && shot.age>2 && tw::length(mortarGuide.back()-shot.position)<4,"slow mortar follows its displayed high arc for several seconds");

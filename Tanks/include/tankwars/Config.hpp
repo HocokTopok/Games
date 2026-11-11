@@ -1,5 +1,6 @@
 #pragma once
 #include <filesystem>
+#include <cstdint>
 #include <string>
 
 namespace tw {
@@ -7,7 +8,8 @@ struct WeaponSpec {
     float minPower{350}, maxPower{1100}, initialPower{850};
     float reloadSeconds{2.2f}, directDamage{48}, splashDamage{36}, blastRadius{86};
     float projectileRadius{3}, barrelLength{37}, projectileLifetime{9};
-    float laserReload{1.2f}, laserDamage{40}, laserDamagePercent{4};
+    float laserReload{2.4f}, laserDamage{80}, laserDamagePercent{8};
+    float ricochetReload{0.42f}, ricochetSpeedScale{1.4f};
     float napalmReload{0.1f}, napalmDirectDamage{3}, napalmSplashDamage{2}, napalmSpread{0.075f};
     float fireRadius{60}, fireDuration{4}, fireDamagePerSecond{7};
     float burnDuration{2.5f}, burnDamagePerSecond{3};
@@ -26,6 +28,8 @@ struct Config {
     float titanHealth{1000};
     bool laserDamageKnown{true};
     bool asymmetricLoadouts{true};
+    bool loadoutSelection{false};
+    std::uint8_t mapId{};
     float jumpSpeed{300}, flightSpeed{340}, flightAcceleration{1100}, descentSpeed{420};
     WeaponSpec weapon;
     static Config load(const std::filesystem::path& path);

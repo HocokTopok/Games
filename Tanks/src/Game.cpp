@@ -1,5 +1,6 @@
 #include "tankwars/Game.hpp"
 #include <iostream>
+#include "tankwars/Weapon.hpp"
 
 namespace tw {
 Game::Game(Config config, LaunchOptions options)
@@ -13,14 +14,23 @@ Game::Game(Config config, LaunchOptions options)
     else if (options_.host) host();
     else if (!options_.join.empty()) { address_ = options_.join; join(); }
 }
-const Config& Game::activeConfig() const { return client_ && client_->welcomed() ? client_->config() : config_; }
+const Config& Game::activeConfig() const { return client_ && client_->welcomed() ? client_->config() : (solo_ ? solo_->config() : config_); }
 void Game::play() {
     leave();
     auto config = config_; config.playerLimit = 2; config.teams = false;
     solo_ = std::make_unique<GameSession>(config);
     solo_->addPlayer("PILOT 01"); solo_->addPlayer("SENTINEL",true);
-    solo_->setReady(0,true); solo_->setReady(1,true); solo_->step();
-    state_ = solo_->snapshot(); previousSolo_ = state_; screen_ = Screen::Playing; renderer_.resetEffects();
+    if (config.loadoutSelection) solo_->setWeapon(1,WeaponKind::Mortar);
+    solo_->setReady(1,true);
+    if (options_.demo || !config.loadoutSelection) {
+        if (config.loadoutSelection) solo_->setWeapon(0,WeaponKind::Ricochet);
+        solo_->setReady(0,true);
+        if (config.loadoutSelection) solo_->setMap(0,config.mapId);
+        solo_->step();
+    }
+    state_ = solo_->snapshot(); previousSolo_ = state_;
+    screen_ = state_.phase==Phase::Lobby ? Screen::Lobby : Screen::Playing;
+    renderer_.resize(activeConfig()); renderer_.resetEffects();
 }
 void Game::host() {
     leave();
@@ -46,7 +56,7 @@ void Game::join() {
     else { status_ = client_->error(); client_.reset(); screen_ = Screen::Join; }
 }
 void Game::leave() {
-    client_.reset(); server_.reset(); solo_.reset(); state_ = {};
+    client_.reset(); server_.reset(); solo_.reset(); state_ = {}; effectState_ = {};
     paused_ = false; accumulator_ = 0; inputTimer_ = 0; wheelTime_ = 0; autoReadySent_ = false;
     controls_.reset();
     screen_ = Screen::Main; status_.clear(); renderer_.resetEffects(); renderer_.resize(config_);
@@ -103,12 +113,23 @@ void Game::update(float dt) {
         const bool wasWelcomed = client_->welcomed(); client_->poll();
         if (!wasWelcomed && client_->welcomed()) renderer_.resize(client_->config());
         state_ = client_->interpolated();
-        if (options_.ready && client_->welcomed() && !autoReadySent_) { client_->ready(true); autoReadySent_ = true; }
+        if (options_.ready && client_->welcomed() && state_.players.size()>=2) {
+            const auto me=std::ranges::find(state_.players,client_->id(),&Player::id);
+            if (me!=state_.players.end() && !autoReadySent_) {
+                if (activeConfig().loadoutSelection) client_->weapon(client_->id()==0 ? WeaponKind::Ricochet : WeaponKind::Mortar);
+                client_->ready(true); autoReadySent_=true;
+            }
+            if (activeConfig().loadoutSelection && client_->id()==0 && !state_.mapSelected && std::ranges::all_of(state_.players,[](const auto& p){return p.ready && p.weaponChosen;})) client_->map(config_.mapId);
+        }
         if (state_.phase != Phase::Lobby && screen_ == Screen::Lobby) { screen_ = Screen::Playing; renderer_.resetEffects(); }
         if (state_.phase == Phase::Lobby && screen_ == Screen::Playing) { screen_ = Screen::Lobby; paused_ = false; }
         inputTimer_ += dt;
         if (inputTimer_ >= 1.f / activeConfig().inputRate) { client_->sendInput(input()); inputTimer_ = std::fmod(inputTimer_,1.f/activeConfig().inputRate); }
-        renderer_.observe(client_->latest());
+        effectState_=client_->consumeEffects(); renderer_.observe(effectState_);
+    }
+    if (solo_ && screen_==Screen::Lobby) {
+        solo_->step(); state_=solo_->snapshot();
+        if (state_.phase!=Phase::Lobby) { screen_=Screen::Playing; previousSolo_=state_; renderer_.resetEffects(); }
     }
     if (solo_ && screen_ == Screen::Playing && !paused_) {
         accumulator_ += dt;
@@ -116,10 +137,13 @@ void Game::update(float dt) {
             previousSolo_ = solo_->snapshot();
             solo_->setInput(0,input()); solo_->step(); accumulator_ -= solo_->config().fixedStep;
         }
-        state_ = solo_->snapshot(); renderer_.observe(state_);
+        state_ = solo_->snapshot(); effectState_=state_; renderer_.observe(effectState_);
+    }
+    if (activeConfig().worldWidth!=viewportWidth_ || activeConfig().worldHeight!=viewportHeight_) {
+        renderer_.resize(activeConfig()); viewportWidth_=activeConfig().worldWidth; viewportHeight_=activeConfig().worldHeight;
     }
     window_.setMouseCursorVisible(screen_ != Screen::Playing || paused_ || state_.phase != Phase::Playing || (client_ && !client_->connected()));
-    audio_.update(dt,client_ ? client_->latest() : state_,activeConfig(),client_ ? client_->id() : 0,
+    audio_.update(dt,effectState_,activeConfig(),client_ ? client_->id() : 0,
         screen_==Screen::Playing && !paused_ && window_.hasFocus() && (!client_ || client_->connected()),window_.hasFocus());
     if (clicked_ && screen_!=Screen::Playing) audio_.uiClick();
 }
@@ -128,7 +152,7 @@ void Game::mainMenu(Vec2 mouse) {
     renderer_.text("TANK",{90,150},132,Renderer::white);
     renderer_.text("WARS",{90,262},132,Renderer::white);
     renderer_.text(config_.titanMode ? "Heavy armor. Unstoppable light." : "A quiet battlefield. A perfect shot.",{101,418},25,Renderer::muted);
-    if (renderer_.button({100,483},{390,74},"PLAY",config_.asymmetricLoadouts ? "Gravity orb vs flying mortar" : (config_.titanMode ? "Titan vs Titan / photon sandbox" : "Solo duel against Sentinel"),mouse,clicked_,true)) { play(); return; }
+    if (renderer_.button({100,483},{390,74},"PLAY","Choose your weapon / explore four battlefields",mouse,clicked_,true)) { play(); return; }
     if (renderer_.button({100,572},{185,62},"HOST","Create LAN room",mouse,clicked_)) { host(); return; }
     if (renderer_.button({305,572},{185,62},"JOIN","Connect by IP",mouse,clicked_)) { screen_ = Screen::Join; status_.clear(); }
     if (renderer_.button({100,650},{185,60},"SETTINGS","Tune your view",mouse,clicked_)) { settingsReturn_ = Screen::Main; screen_ = Screen::Settings; }
@@ -154,42 +178,66 @@ void Game::joinMenu(Vec2 mouse) {
     if (!status_.empty()) renderer_.text(status_,{800,686},20,Renderer::playerColor(1),true);
 }
 void Game::lobby(Vec2 mouse) {
-    renderer_.dim(0.35f);
-    renderer_.text(server_ ? "YOUR ROOM" : "CONNECTED",{100,80},56,Renderer::white);
-    const std::string endpoint = server_ ? localAddress_ + ":" + std::to_string(server_->port()) : address_;
-    renderer_.text("LAN  /  " + endpoint,{103,154},25,Renderer::accent);
-    const auto health = std::to_string(static_cast<int>(activeConfig().titanHealth));
-    renderer_.text(activeConfig().titanMode ? "TITAN DUEL / " + health + " HP per pilot. Aerial stomps are lethal." : "Choose a unique color. The match begins when everyone is ready.",{103,201},23,Renderer::muted);
-    const auto local = client_ ? client_->id() : noPlayer;
-    const Player* me = nullptr;
-    const unsigned limit = activeConfig().playerLimit;
-    const float width = limit > 2 ? 320.f : 650.f;
-    for (unsigned i = 0; i < limit; ++i) {
-        const float x = 100 + i * (width + 32);
-        const Player* p = i < state_.players.size() ? &state_.players[i] : nullptr;
-        const auto color = p ? Renderer::playerColor(p->color) : Renderer::muted;
-        renderer_.box({x,288},{width,270},{11,23,37,240},{42,64,80}); renderer_.box({x,288},{width,3},color);
-        renderer_.text("PILOT / 0" + std::to_string(i+1),{x+27,314},18,Renderer::muted);
-        renderer_.text(p ? p->name : "WAITING...",{x+27,357},limit > 2 ? 31 : 43,p ? color : Renderer::muted);
-        if (p) {
-            if (p->id == local) me = p;
-            renderer_.text(p->id == local ? "THIS IS YOU" : "CONNECTED ON LAN",{x+27,420},18,Renderer::muted);
-            renderer_.circle({x+35,504},5,p->ready ? Renderer::accent : Renderer::playerColor(3));
-            renderer_.text(p->ready ? "READY" : "CHOOSING LOADOUT",{x+52,488},22,p->ready ? Renderer::accent : Renderer::muted);
-        } else renderer_.text("Share the room address to invite a friend.",{x+27,431},limit > 2 ? 15 : 22,Renderer::muted);
+    renderer_.dim(0.72f);
+    const PlayerId local=client_ ? client_->id() : 0;
+    const auto it=std::ranges::find(state_.players,local,&Player::id);
+    const Player* me=it==state_.players.end() ? nullptr : &*it;
+    const bool allReady=state_.players.size()>=2 && std::ranges::all_of(state_.players,[](const auto& p){return p.ready && p.weaponChosen;});
+    const bool chooseMap=activeConfig().loadoutSelection && allReady;
+    renderer_.text(chooseMap ? "02 / SELECT BATTLEFIELD" : "01 / ARM YOUR TANK",{90,60},51,Renderer::white);
+    const auto endpoint=solo_ ? "SOLO / SENTINEL" : (server_ ? localAddress_+":"+std::to_string(server_->port()) : address_);
+    renderer_.text(endpoint,{94,126},22,Renderer::accent);
+    renderer_.text(chooseMap ? (local==0 ? "All weapons confirmed. Choose a map to deploy." : "All weapons confirmed. Waiting for the host to choose a map.") : "Choose a weapon and confirm. The host then selects the battlefield.",{94,174},23,Renderer::muted);
+    const float width=state_.players.size()>2 ? 340.f : 700.f;
+    for (std::size_t i=0;i<state_.players.size();++i) {
+        const auto& p=state_.players[i]; const float x=90+i*(width+20);
+        renderer_.box({x,225},{width,110},{12,25,39,240},Renderer::playerColor(p.color));
+        renderer_.text(p.name+(p.id==local ? " / YOU" : ""),{x+20,240},25,Renderer::playerColor(p.color));
+        renderer_.text(p.weaponChosen ? weaponName(p.weapon) : "SELECTING WEAPON",{x+20,282},21,Renderer::white);
+        renderer_.text(p.ready ? "CONFIRMED" : "PREPARING",{x+width-165,286},17,p.ready ? Renderer::accent : Renderer::muted);
     }
-    renderer_.text("YOUR COLOR",{103,605},17,Renderer::muted);
-    for (std::uint8_t i = 0; i < 6; ++i) {
-        const Vec2 center{123.f + i*58,665};
-        const bool taken = std::ranges::any_of(state_.players,[&](const auto& p) { return p.id != local && p.color == i; });
-        renderer_.circle(center,17,taken ? sf::Color{37,48,63} : Renderer::playerColor(i));
-        if (me && me->color == i) renderer_.circle(center,23,sf::Color::Transparent,Renderer::white);
-        if (taken) renderer_.line(center - Vec2{9,9},center + Vec2{9,9},Renderer::muted,2);
-        if (clicked_ && length(mouse-center)<23 && !taken && client_) client_->color(i);
+    if (state_.players.size()<2) {
+        renderer_.box({810,225},{700,110},{11,23,37,220},{43,64,80});
+        renderer_.text("WAITING FOR A RIVAL",{1160,242},27,Renderer::muted,true);
+        renderer_.text("Share the LAN address above to invite a pilot.",{1160,285},19,Renderer::muted,true);
     }
-    if (renderer_.button({1050,621},{350,77},me && me->ready ? "CANCEL READY" : "READY UP", "All pilots must confirm", mouse,clicked_,true,me != nullptr)) client_->ready(!me->ready);
-    if (renderer_.button({100,766},{250,64},"LEAVE ROOM","ESC",mouse,clicked_)) leave();
-    renderer_.text(server_ ? "SAME COMPUTER? JOIN 127.0.0.1:" + std::to_string(config_.port) : "WAITING FOR ALL PILOTS",{850,795},19,Renderer::muted,true);
+    if (!chooseMap) {
+        constexpr const char* details[]{"Fire pools / rapid fire", "High arc / smooth craters", "2.4 sec / double damage", "2 bounces / 20 > 30 > 40", "Growing energy / 2 bounces"};
+        constexpr const char* notes[]{"Burns armor and ground", "65 damage / 68 m blast", "Bright instant rail beam", "Fast ballistic projectiles", "Charges from 1 to 100 DMG"};
+        for (std::size_t i=0;i<selectableWeapons.size();++i) {
+            const float x=90+i*290.f; const auto kind=selectableWeapons[i];
+            const bool selected=me && me->weaponChosen && me->weapon==kind;
+            renderer_.box({x,383},{272,230},{11,24,39,245},selected ? Renderer::accent : sf::Color{49,71,86});
+            renderer_.weaponPreview(kind,{x+136,440},time_);
+            renderer_.text(notes[i],{x+136,554},16,Renderer::muted,true);
+            if (renderer_.button({x+8,483},{256,66},weaponName(kind),details[i],mouse,clicked_,selected,me && (activeConfig().loadoutSelection || state_.battlefieldData))) {
+                if (client_) client_->weapon(kind); else solo_->setWeapon(local,kind);
+            }
+        }
+    } else {
+        for (std::uint8_t i=0;i<4;++i) {
+            const float x=90+i*363.f;
+            renderer_.mapPreview(i,{x,375},{343,157});
+            if (renderer_.button({x,545},{343,77},MapFactory::name(i),MapFactory::description(i),mouse,clicked_,i==0,local==0)) {
+                if (client_) client_->map(i); else solo_->setMap(local,i);
+            }
+        }
+    }
+    renderer_.text("YOUR COLOR",{94,670},17,Renderer::muted);
+    for (std::uint8_t i=0;i<6;++i) {
+        const Vec2 center{113.f+i*53,719};
+        const bool taken=std::ranges::any_of(state_.players,[&](const auto& p){return p.id!=local && p.color==i;});
+        renderer_.circle(center,14,taken ? sf::Color{40,49,62} : Renderer::playerColor(i));
+        if (me && me->color==i) renderer_.circle(center,20,sf::Color::Transparent,Renderer::white);
+        if (clicked_ && !chooseMap && length(mouse-center)<20 && !taken) {
+            if (client_) client_->color(i); else solo_->setColor(local,i);
+        }
+    }
+    if (renderer_.button({1020,677},{480,74},me && me->ready ? "CHANGE LOADOUT" : (activeConfig().loadoutSelection ? "CONFIRM WEAPON" : "READY UP"),chooseMap ? "Return to weapon selection" : "Each pilot confirms independently",mouse,clicked_,true,me && (me->weaponChosen || !activeConfig().loadoutSelection))) {
+        if (client_) client_->ready(!me->ready); else solo_->setReady(local,!me->ready);
+    }
+    if (renderer_.button({90,803},{255,61},solo_ ? "MAIN MENU" : "LEAVE ROOM","ESC",mouse,clicked_)) leave();
+    renderer_.text("FIVE WEAPONS  /  FOUR BATTLEFIELDS  /  SUPPLIES EVERY 30 SEC",{1010,824},18,Renderer::muted,true);
 }
 void Game::settingsMenu(Vec2 mouse) {
     renderer_.dim(0.65f);
@@ -255,7 +303,7 @@ void Game::matchMenu(Vec2 mouse) {
 }
 void Game::draw() {
     window_.clear({5,9,17});
-    renderer_.scenery(activeConfig(),time_,screen_ == Screen::Main || (screen_ == Screen::Settings && settingsReturn_ == Screen::Main));
+    renderer_.scenery(activeConfig(),time_,screen_ == Screen::Main || (screen_ == Screen::Settings && settingsReturn_ == Screen::Main),screen_==Screen::Playing ? &state_ : nullptr);
     const auto mouse = renderer_.uiMouse(sf::Mouse::getPosition(window_));
     switch (screen_) {
     case Screen::Main: mainMenu(mouse); break;

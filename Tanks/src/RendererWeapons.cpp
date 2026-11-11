@@ -23,6 +23,34 @@ void Renderer::ring(Vec2 position,float radius,sf::Color color,float start,float
     window_.draw(vertices,sf::RenderStates(sf::BlendAdd));
 }
 void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::vector<Vec2>& trail) {
+    if (p.weapon==WeaponKind::Napalm) {
+        for (std::size_t i=1;i<trail.size();++i) {
+            const float t=static_cast<float>(i)/trail.size();
+            line(trail[i-1],trail[i],fade({255,100,24},t*190),1+t*4);
+            if (i%4==0) glow(trail[i],8,{255,139,34},t*55);
+        }
+        glow(p.position,24,{255,79,18},100);
+        glow(p.position,11,{255,179,55},180);
+        flame(p.position,7,p.id);
+        circle(p.position,3,{255,242,170});
+        return;
+    }
+    if (p.weapon==WeaponKind::Ricochet) {
+        const float radius=Cannon::radius(p,c.weapon);
+        const sf::Color color=p.bounces==0 ? sf::Color{89,195,255} : (p.bounces==1 ? sf::Color{167,131,255} : sf::Color{255,173,91});
+        for (std::size_t i=1;i<trail.size();++i) {
+            const float t=static_cast<float>(i)/trail.size();
+            line(trail[i-1],trail[i],fade(color,t*t*180),radius*t);
+        }
+        glow(p.position,radius*6,color,85);
+        glow(p.position,radius*2,color,180);
+        const auto axis=direction(std::atan2(p.velocity.y,p.velocity.x));
+        line(p.position-axis*(radius*2),p.position+axis*radius,{225,245,255},radius);
+        circle(p.position,radius*0.6f,{255,255,246});
+        ring(p.position,radius*1.8f,fade(color,200),time_*5,pi*1.6f,0.7f);
+        for (unsigned i=p.bounces;i<2;++i) circle(p.position+Vec2{(static_cast<float>(i)*2-1)*4,-radius-9},1.7f,color);
+        return;
+    }
     const bool orb=p.weapon==WeaponKind::GrowingOrb;
     const float charge=orb ? Cannon::orbCharge(p.age,c.weapon) : 0.f;
     const float radius=Cannon::radius(p,c.weapon);

@@ -36,8 +36,8 @@ struct Input {
     float lift{};
 };
 enum class Phase : std::uint8_t { Lobby, Playing, Victory };
-enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet };
-enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb };
+enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup };
+enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb, Ricochet };
 struct GameEvent {
     std::uint32_t id{};
     EventKind kind{};
@@ -50,6 +50,8 @@ struct Player {
     std::uint8_t color{}, team{};
     bool connected{}, ready{}, bot{};
     std::string name;
+    WeaponKind weapon{WeaponKind::Cannon};
+    bool weaponChosen{};
 };
 struct Tank {
     PlayerId id{};
@@ -59,8 +61,10 @@ struct Tank {
     bool titan{};
     WeaponKind weapon{WeaponKind::Cannon};
     bool canFly{};
-    float verticalVelocity{}, burnRemaining{};
+    float verticalVelocity{}, burnRemaining{}, burnDamageScale{1};
     float maxHp{100};
+    float damageRemaining{}, shieldRemaining{}, healIndicator{};
+    bool inMud{};
     bool alive() const { return hp > 0.f; }
     float healthRatio() const { return std::clamp(hp / std::max(1.f,maxHp),0.f,1.f); }
     Vec2 pivot() const { return position + rotate({0, -12}, bodyAngle); }
@@ -74,6 +78,7 @@ struct Projectile {
     bool napalm{};
     WeaponKind weapon{WeaponKind::Cannon};
     std::uint8_t bounces{};
+    float damageScale{1};
 };
 struct LaserBeam {
     std::uint32_t id{};
@@ -85,7 +90,17 @@ struct FirePatch {
     PlayerId owner{};
     Vec2 position{};
     float remaining{}, radius{};
+    float damageScale{1};
 };
+enum class PickupKind : std::uint8_t { Health, Damage, Shield };
+struct SupplyDrop {
+    std::uint32_t id{};
+    Vec2 position{};
+    float velocity{}, age{};
+    PickupKind kind{};
+    bool landed{};
+};
+struct SupplyPlane { bool active{}; Vec2 position{}; float targetX{}; bool released{}; };
 struct Snapshot {
     std::uint32_t tick{}, round{};
     Phase phase{Phase::Lobby};
@@ -98,6 +113,11 @@ struct Snapshot {
     std::vector<LaserBeam> lasers;
     std::vector<FirePatch> fires;
     bool detailedWeapons{};
+    bool battlefieldData{}, mapSelected{};
+    std::uint8_t mapId{};
+    std::vector<float> terrain;
+    std::vector<SupplyDrop> supplies;
+    SupplyPlane plane;
 };
 inline const Tank* findTank(const Snapshot& state, PlayerId id) {
     for (const auto& tank : state.tanks) if (tank.id == id) return &tank;

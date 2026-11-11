@@ -1,5 +1,6 @@
 #include "tankwars/GameSession.hpp"
 #include <set>
+#include "tankwars/Weapon.hpp"
 
 namespace tw {
 GameSession::GameSession(Config config) : config_(config), world_(config) {}
@@ -23,12 +24,23 @@ void GameSession::removePlayer(PlayerId id) {
 bool GameSession::setColor(PlayerId id, std::uint8_t color) {
     if (phase_ != Phase::Lobby || color >= 6) return false;
     if (std::ranges::any_of(players_, [&](const auto& p) { return p.id != id && p.color == color; })) return false;
-    for (auto& p : players_) if (p.id == id) { p.color = color; p.ready = false; return true; }
+    for (auto& p : players_) if (p.id == id) { p.color = color; p.ready = false; mapSelected_=false; return true; }
     return false;
+}
+bool GameSession::setWeapon(PlayerId id, WeaponKind weapon) {
+    if (phase_!=Phase::Lobby || std::ranges::find(selectableWeapons,weapon)==selectableWeapons.end()) return false;
+    for (auto& p : players_) if (p.id==id && p.connected) { p.weapon=weapon; p.weaponChosen=true; p.ready=false; mapSelected_=false; return true; }
+    return false;
+}
+bool GameSession::setMap(PlayerId id, std::uint8_t map) {
+    if (id!=0 || phase_!=Phase::Lobby || map>3 || players_.size()<2 ||
+        !std::ranges::all_of(players_,[](const auto& p) { return p.connected && p.ready && p.weaponChosen; })) return false;
+    config_=MapFactory::preset(config_,map); config_.validate(); world_.selectMap(config_); mapSelected_=true;
+    return true;
 }
 void GameSession::setReady(PlayerId id, bool ready) {
     if (phase_ != Phase::Lobby) return;
-    for (auto& p : players_) if (p.id == id && p.connected) p.ready = ready;
+    for (auto& p : players_) if (p.id == id && p.connected && (!config_.loadoutSelection || p.weaponChosen)) { p.ready = ready; if (!ready) mapSelected_=false; }
 }
 void GameSession::setInput(PlayerId id, Input input) { if (id < maxPlayers) inputs_[id] = input; }
 Input GameSession::botInput(const Tank& tank) const {
@@ -49,7 +61,7 @@ Input GameSession::botInput(const Tank& tank) const {
         return {0,aim,0,std::abs(angleDelta(tank.aim,aim))<0.04f};
     }
     const float gravity=config_.gravity*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarGravityScale : 1.f);
-    const float launchSpeed=speed*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarSpeedScale : 1.f);
+    const float launchSpeed=speed*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarSpeedScale : (tank.weapon==WeaponKind::Ricochet ? config_.weapon.ricochetSpeedScale : 1.f));
     const float disc = std::pow(launchSpeed,4) - gravity * (gravity * x * x - 2 * delta.y * launchSpeed * launchSpeed);
     if (disc <= 0 || x < 1) return {0, tank.aim, 1, false};
     float angle = -std::atan((launchSpeed * launchSpeed + (tank.weapon==WeaponKind::Mortar ? 1.f : -1.f)*std::sqrt(disc)) / (gravity * x));
@@ -60,7 +72,7 @@ Input GameSession::botInput(const Tank& tank) const {
 }
 void GameSession::step() {
     if (phase_ == Phase::Lobby) {
-        if (players_.size() >= 2 && std::ranges::all_of(players_, [](const auto& p) { return p.connected && p.ready; })) {
+        if ((!config_.loadoutSelection || mapSelected_) && players_.size() >= 2 && std::ranges::all_of(players_, [](const auto& p) { return p.connected && p.ready; })) {
             std::set<unsigned> teams;
             for (const auto& p : players_) teams.insert(p.team);
             if (teams.size() < 2) return;
@@ -84,12 +96,13 @@ void GameSession::step() {
 }
 void GameSession::rematch() {
     if (phase_ != Phase::Victory) return;
-    phase_ = Phase::Lobby; winner_ = noPlayer; inputs_ = {};
+    phase_ = Phase::Lobby; mapSelected_=false; winner_ = noPlayer; inputs_ = {};
     std::erase_if(players_, [](const auto& p) { return !p.connected; });
     for (auto& p : players_) p.ready = p.bot;
 }
 Snapshot GameSession::snapshot() const {
     auto state = world_.snapshot();
+    state.mapSelected=mapSelected_; state.mapId=config_.mapId;
     state.players = players_; state.phase = phase_; state.winner = winner_;
     return state;
 }

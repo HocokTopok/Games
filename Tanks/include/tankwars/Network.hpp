@@ -27,6 +27,8 @@ public:
     void poll();
     void sendInput(Input input);
     void ready(bool value);
+    void weapon(WeaponKind value);
+    void map(std::uint8_t value);
     void color(std::uint8_t value);
     void rematch();
     bool connected() const;
@@ -35,6 +37,7 @@ public:
     const Config& config() const;
     const Snapshot& latest() const;
     Snapshot interpolated() const;
+    Snapshot consumeEffects();
     const std::string& error() const;
 private:
     struct Impl;

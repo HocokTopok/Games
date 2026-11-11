@@ -8,6 +8,8 @@ public:
     std::optional<PlayerId> addPlayer(std::string name, bool bot = false);
     void removePlayer(PlayerId id);
     bool setColor(PlayerId id, std::uint8_t color);
+    bool setWeapon(PlayerId id, WeaponKind weapon);
+    bool setMap(PlayerId id, std::uint8_t map);
     void setReady(PlayerId id, bool ready);
     void setInput(PlayerId id, Input input);
     void step();
@@ -22,6 +24,7 @@ private:
     std::vector<Player> players_;
     std::array<Input, maxPlayers> inputs_{};
     Phase phase_{Phase::Lobby};
+    bool mapSelected_{};
     PlayerId winner_{noPlayer};
 };
 }

@@ -40,12 +40,14 @@ private:
     Screen screen_{Screen::Main}, settingsReturn_{Screen::Main};
     bool paused_{}, clicked_{}, autoReadySent_{}, showFps_{};
     float accumulator_{}, inputTimer_{}, wheelTime_{}, wheelDirection_{}, time_{}, fps_{};
+    float viewportWidth_{}, viewportHeight_{};
     unsigned frame_{};
     std::string address_{"127.0.0.1"}, localAddress_, status_;
     std::unique_ptr<GameSession> solo_;
     std::unique_ptr<net::Server> server_;
     std::unique_ptr<net::Client> client_;
     Snapshot state_;
+    Snapshot effectState_;
     Snapshot previousSolo_;
 };
 }

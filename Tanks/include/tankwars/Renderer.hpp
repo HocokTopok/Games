@@ -13,8 +13,10 @@ public:
     void update(float dt);
     void resetEffects();
     void observe(const Snapshot& state);
-    void scenery(const Config& config, float time, bool showcase = false);
+    void scenery(const Config& config, float time, bool showcase = false, const Snapshot* state = nullptr);
     void battle(const Config& config, const Snapshot& state, PlayerId local, Vec2 mouse, bool cursor);
+    void weaponPreview(WeaponKind kind, Vec2 center, float time);
+    void mapPreview(std::uint8_t id, Vec2 position, Vec2 size);
     void hud(const Config& config, const Snapshot& state, PlayerId local, bool network);
     void text(const std::string& value, Vec2 position, unsigned size, sf::Color color, bool centered = false);
     void box(Vec2 position, Vec2 size, sf::Color fill, sf::Color outline = sf::Color::Transparent);
@@ -31,6 +33,9 @@ public:
     static inline const sf::Color white{230, 240, 249}, muted{119, 145, 166}, accent{114, 246, 208}, dark{9, 16, 29};
 private:
     void tank(const Tank& tank, const Config& config, float scale = 1);
+    void decorations(const Config& config, const Terrain& map, float time);
+    void supplies(const Config& config, const Snapshot& state);
+    void perkIcon(PickupKind kind, Vec2 position, float size, sf::Color color, float rotation = 0);
     void terrain(const Config& config, const Terrain& map);
     void effects();
     void flame(Vec2 position, float size, float phase);

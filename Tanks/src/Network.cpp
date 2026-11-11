@@ -1,6 +1,7 @@
 #include "tankwars/Network.hpp"
 #include <SFML/Network.hpp>
 #include <chrono>
+#include <atomic>
 #include <deque>
 #include <thread>
 #include <stdexcept>
@@ -14,15 +15,17 @@ namespace tw::net {
 namespace {
 using Clock = std::chrono::steady_clock;
 using Status = sf::Socket::Status;
-enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, Rematch, Error };
+enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, Rematch, Error, Weapon, Map };
 constexpr std::uint32_t magic = 0x54414e4b;
 constexpr std::uint32_t extensionMagic = 0x54575831;
 constexpr std::uint16_t extensionVersion = 2;
-constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2;
+constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2, battlefieldCapability = 4;
 constexpr std::uint32_t weaponMagic = 0x41525731;
 constexpr std::uint16_t weaponVersion = 1;
 constexpr std::uint32_t healthMagic = 0x48505731;
 constexpr std::uint16_t healthVersion = 1;
+constexpr std::uint32_t battlefieldMagic=0x42465731;
+constexpr std::uint16_t battlefieldVersion=1;
 constexpr std::size_t maxFrame = 65536, maxQueued = 262144;
 
 sf::Packet packet(Message type) { sf::Packet p; p << static_cast<std::uint8_t>(type); return p; }
@@ -79,6 +82,9 @@ void writeWeaponConfig(sf::Packet& p, const WeaponSpec& w) {
     p << weaponMagic << weaponVersion << w.mortarReload << w.mortarSpeedScale << w.mortarGravityScale << w.mortarBlastRadius << w.mortarDamage
       << w.orbReload << w.orbSpeedScale << w.orbGrowthSeconds << w.orbInitialRadius << w.orbMaxRadius << w.orbLifetime;
 }
+void writeBattlefieldConfig(sf::Packet& p, const Config& c) {
+    p << battlefieldMagic << battlefieldVersion << c.loadoutSelection << c.mapId << c.weapon.ricochetReload << c.weapon.ricochetSpeedScale;
+}
 void readWeaponConfig(sf::Packet& p, WeaponSpec& w) {
     p >> w.mortarReload >> w.mortarSpeedScale >> w.mortarGravityScale >> w.mortarBlastRadius >> w.mortarDamage
       >> w.orbReload >> w.orbSpeedScale >> w.orbGrowthSeconds >> w.orbInitialRadius >> w.orbMaxRadius >> w.orbLifetime;
@@ -117,6 +123,16 @@ void writeState(sf::Packet& p, const Snapshot& s, bool nativeHealth) {
         for (const auto& projectile : s.projectiles) p << static_cast<std::uint8_t>(projectile.weapon) << projectile.bounces;
         for (const auto& event : s.events) p << static_cast<std::uint8_t>(event.kind) << event.radius << event.intensity;
     }
+    p << battlefieldMagic << battlefieldVersion << s.mapId << s.mapSelected;
+    for (const auto& player : s.players) p << static_cast<std::uint8_t>(player.weapon) << player.weaponChosen;
+    for (const auto& tank : s.tanks) p << tank.damageRemaining << tank.shieldRemaining << tank.healIndicator << tank.inMud;
+    for (const auto& projectile : s.projectiles) p << projectile.damageScale;
+    for (const auto& fire : s.fires) p << fire.damageScale;
+    p << static_cast<std::uint16_t>(s.terrain.size());
+    for (float y : s.terrain) p << y;
+    p << static_cast<std::uint8_t>(s.supplies.size());
+    for (const auto& drop : s.supplies) p << drop.id << drop.position << drop.velocity << drop.age << static_cast<std::uint8_t>(drop.kind) << drop.landed;
+    p << s.plane.active << s.plane.position << s.plane.targetX << s.plane.released;
 }
 bool readState(sf::Packet& p, Snapshot& s) {
     std::uint8_t phase{}, count{};
@@ -228,20 +244,49 @@ bool readState(sf::Packet& p, Snapshot& s) {
             s.detailedWeapons=true;
             for (auto& tank : s.tanks) {
                 std::uint8_t kind{}; p >> kind;
-                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::GrowingOrb)) return false;
+                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Ricochet)) return false;
                 tank.weapon=static_cast<WeaponKind>(kind);
             }
             for (auto& projectile : s.projectiles) {
                 std::uint8_t kind{}; p >> kind >> projectile.bounces;
-                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::GrowingOrb) || projectile.bounces>2) return false;
+                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Ricochet) || projectile.bounces>2) return false;
                 projectile.weapon=static_cast<WeaponKind>(kind);
             }
             for (auto& event : s.events) {
                 std::uint8_t kind{}; p >> kind >> event.radius >> event.intensity;
-                if (!p || kind>static_cast<std::uint8_t>(EventKind::Ricochet) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
+                if (!p || kind>static_cast<std::uint8_t>(EventKind::Pickup) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
                     !std::isfinite(event.intensity) || event.intensity<0 || event.intensity>1) return false;
                 event.kind=static_cast<EventKind>(kind);
             }
+        } else if (marker==battlefieldMagic && version==battlefieldVersion) {
+            s.battlefieldData=true;
+            p >> s.mapId >> s.mapSelected;
+            if (!p || s.mapId>3) return false;
+            for (auto& player : s.players) {
+                std::uint8_t kind{}; p >> kind >> player.weaponChosen;
+                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Ricochet)) return false;
+                player.weapon=static_cast<WeaponKind>(kind);
+            }
+            for (auto& tank : s.tanks) {
+                p >> tank.damageRemaining >> tank.shieldRemaining >> tank.healIndicator >> tank.inMud;
+                if (!p || !std::isfinite(tank.damageRemaining) || tank.damageRemaining<0 || tank.damageRemaining>15 ||
+                    !std::isfinite(tank.shieldRemaining) || tank.shieldRemaining<0 || tank.shieldRemaining>10 ||
+                    !std::isfinite(tank.healIndicator) || tank.healIndicator<0 || tank.healIndicator>1.5f) return false;
+            }
+            for (auto& projectile : s.projectiles) { p >> projectile.damageScale; if (!p || (projectile.damageScale!=1 && projectile.damageScale!=1.5f)) return false; }
+            for (auto& fire : s.fires) { p >> fire.damageScale; if (!p || (fire.damageScale!=1 && fire.damageScale!=1.5f)) return false; }
+            p >> n; if (!p || n>1001) return false;
+            s.terrain.resize(n);
+            for (auto& y : s.terrain) { p >> y; if (!p || !std::isfinite(y) || y<100 || y>2000) return false; }
+            p >> count; if (!p || count>8) return false;
+            s.supplies.resize(count);
+            for (auto& drop : s.supplies) {
+                std::uint8_t kind{}; p >> drop.id >> drop.position >> drop.velocity >> drop.age >> kind >> drop.landed;
+                if (!p || !finite(drop.position) || !std::isfinite(drop.velocity) || !std::isfinite(drop.age) || drop.age<0 || drop.age>80 || kind>2) return false;
+                drop.kind=static_cast<PickupKind>(kind);
+            }
+            p >> s.plane.active >> s.plane.position >> s.plane.targetX >> s.plane.released;
+            if (!p || !finite(s.plane.position) || !std::isfinite(s.plane.targetX)) return false;
         } else break;
     }
     return static_cast<bool>(p);
@@ -309,17 +354,18 @@ struct Server::Impl {
     struct Peer {
         Channel channel;
         PlayerId id{noPlayer};
-        bool nativeHealth{};
+        bool nativeHealth{}, battlefield{};
         Clock::time_point lastInput{Clock::now()};
     };
     std::vector<std::unique_ptr<Peer>> peers;
-    std::jthread worker;
+    std::atomic<bool> stopping{false};
+    std::thread worker;
     explicit Impl(Config c, unsigned short port) : config(c), session(c) {
         if (listener.listen(port) != Status::Done) throw std::runtime_error("Port is busy. Choose another port or close the other host.");
         listener.setBlocking(false);
-        worker = std::jthread([this](std::stop_token stop) { run(stop); });
+        worker = std::thread([this] { run(); });
     }
-    ~Impl() { worker.request_stop(); if (worker.joinable()) worker.join(); }
+    ~Impl() { stopping.store(true, std::memory_order_relaxed); if (worker.joinable()) worker.join(); }
     void process(Peer& peer, sf::Packet& p) {
         std::uint8_t type{}; p >> type;
         if (!p) { peer.channel.alive = false; return; }
@@ -334,6 +380,11 @@ struct Server::Impl {
                 p >> marker >> capabilities;
                 if (!p) { peer.channel.alive = false; return; }
                 peer.nativeHealth = marker == capabilityMagic && (capabilities & healthCapability) != 0;
+                peer.battlefield = marker == capabilityMagic && (capabilities & battlefieldCapability) != 0;
+            }
+            if (config.loadoutSelection && !peer.battlefield) {
+                auto error=packet(Message::Error); error << std::string("Update both games to Tank Wars 1.3.0 or newer for weapons, maps and full effects.");
+                peer.channel.queue(std::move(error)); peer.channel.flush(); peer.channel.alive=false; return;
             }
             for (char& ch : name) if (ch < 32 || ch > 126) ch = '?';
             auto id = session.addPlayer(name.empty() ? "PILOT" : name);
@@ -349,6 +400,7 @@ struct Server::Impl {
             if (peer.nativeHealth) welcome << healthMagic << healthVersion << config.titanHealth
                 << std::min(10000.f,config.weapon.laserHitDamage(config.titanMode ? config.titanHealth : 100.f)) << config.weapon.laserDamagePercent;
             writeWeaponConfig(welcome,config.weapon);
+            writeBattlefieldConfig(welcome,config);
             peer.channel.queue(std::move(welcome));
             return;
         }
@@ -364,6 +416,8 @@ struct Server::Impl {
             in.aim = std::remainder(in.aim, 2 * pi);
             session.setInput(peer.id, in); peer.lastInput = Clock::now(); break;
         }
+        case Message::Weapon: { std::uint8_t value{}; if (p >> value) session.setWeapon(peer.id,static_cast<WeaponKind>(value)); break; }
+        case Message::Map: { std::uint8_t value{}; if (p >> value) session.setMap(peer.id,value); break; }
         case Message::Ready: { bool value{}; if (p >> value) session.setReady(peer.id, value); break; }
         case Message::Color: { std::uint8_t value{}; if (p >> value) session.setColor(peer.id, value); break; }
         case Message::Rematch: if (peer.id == 0) session.rematch(); break;
@@ -371,10 +425,10 @@ struct Server::Impl {
         }
         if (!p) peer.channel.alive = false;
     }
-    void run(std::stop_token stop) {
+    void run() {
         auto previous = Clock::now();
         double accumulator = 0, snapshotTimer = 0;
-        while (!stop.stop_requested()) {
+        while (!stopping.load(std::memory_order_relaxed)) {
             const auto now = Clock::now();
             const double dt = std::min(0.1, std::chrono::duration<double>(now - previous).count()); previous = now;
             accumulator += dt; snapshotTimer += dt;
@@ -423,6 +477,9 @@ struct Client::Impl {
     PlayerId id{noPlayer};
     Config config;
     Snapshot latest;
+    std::vector<GameEvent> pendingEvents;
+    std::vector<LaserBeam> pendingBeams;
+    std::uint32_t collectedEvent{}, collectedBeam{};
     bool detailedWeaponConfig{};
     struct Timed { Clock::time_point time; Snapshot state; };
     std::deque<Timed> history;
@@ -441,11 +498,11 @@ bool Client::connect(const std::string& address, unsigned short port, const std:
     }
     channel->socket->setBlocking(false); impl_->channel = std::move(channel);
     auto hello = packet(Message::Hello);
-    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability);
+    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability|battlefieldCapability);
     impl_->queue(std::move(hello));
     return true;
 }
-void Client::disconnect() { impl_->channel.reset(); impl_->id = noPlayer; impl_->history.clear(); impl_->latest = {}; impl_->detailedWeaponConfig=false; }
+void Client::disconnect() { impl_->channel.reset(); impl_->id = noPlayer; impl_->history.clear(); impl_->latest = {}; impl_->detailedWeaponConfig=false; impl_->pendingEvents.clear(); impl_->pendingBeams.clear(); impl_->collectedEvent=impl_->collectedBeam=0; }
 void Client::poll() {
     if (!impl_->channel) return;
     auto& ch = *impl_->channel;
@@ -476,6 +533,8 @@ void Client::poll() {
                         } else if (marker==weaponMagic && version==weaponVersion) {
                             readWeaponConfig(p,impl_->config.weapon);
                             impl_->detailedWeaponConfig=static_cast<bool>(p);
+                        } else if (marker==battlefieldMagic && version==battlefieldVersion) {
+                            p >> impl_->config.loadoutSelection >> impl_->config.mapId >> impl_->config.weapon.ricochetReload >> impl_->config.weapon.ricochetSpeedScale;
                         } else break;
                     }
                     valid = static_cast<bool>(p);
@@ -488,8 +547,23 @@ void Client::poll() {
                 impl_->error="Missing projectile graphics data. Restart both games using the same updated build.";
                 valid=false;
             }
+            if (valid && impl_->config.loadoutSelection && !s.battlefieldData) valid=false;
             if (valid) {
+                if (s.mapSelected) {
+                    impl_->config=MapFactory::preset(impl_->config,s.mapId);
+                    const auto expected=static_cast<std::size_t>(std::ceil(impl_->config.worldWidth/4))+1;
+                    if (s.terrain.size()!=expected) { impl_->error="Invalid battlefield surface."; ch.alive=false; break; }
+                }
                 if (s.round != impl_->latest.round || s.phase != impl_->latest.phase) impl_->history.clear();
+                if (s.round!=impl_->latest.round) {
+                    impl_->pendingEvents.clear(); impl_->pendingBeams.clear(); impl_->collectedEvent=impl_->collectedBeam=0;
+                }
+                // A slow rendered frame may drain several network snapshots. Preserve every
+                // newly received event instead of exposing only the final snapshot's tail.
+                for (const auto& event : s.events) if (event.id>impl_->collectedEvent) { impl_->pendingEvents.push_back(event); impl_->collectedEvent=event.id; }
+                for (const auto& beam : s.lasers) if (beam.id>impl_->collectedBeam) { impl_->pendingBeams.push_back(beam); impl_->collectedBeam=beam.id; }
+                if (impl_->pendingEvents.size()>512) impl_->pendingEvents.erase(impl_->pendingEvents.begin(),impl_->pendingEvents.end()-512);
+                if (impl_->pendingBeams.size()>128) impl_->pendingBeams.erase(impl_->pendingBeams.begin(),impl_->pendingBeams.end()-128);
                 impl_->latest = s; impl_->history.push_back({Clock::now(), std::move(s)});
                 while (impl_->history.size() > 32) impl_->history.pop_front();
             }
@@ -503,6 +577,8 @@ void Client::poll() {
 }
 void Client::sendInput(Input in) { auto p = packet(Message::Input); p << in.move << in.aim << in.powerDelta << in.fire << in.lift; impl_->queue(std::move(p)); }
 void Client::ready(bool value) { auto p = packet(Message::Ready); p << value; impl_->queue(std::move(p)); }
+void Client::weapon(WeaponKind value) { auto p=packet(Message::Weapon); p << static_cast<std::uint8_t>(value); impl_->queue(std::move(p)); }
+void Client::map(std::uint8_t value) { auto p=packet(Message::Map); p << value; impl_->queue(std::move(p)); }
 void Client::color(std::uint8_t value) { auto p = packet(Message::Color); p << value; impl_->queue(std::move(p)); }
 void Client::rematch() { impl_->queue(packet(Message::Rematch)); }
 bool Client::connected() const { return impl_->channel && impl_->channel->alive; }
@@ -511,6 +587,12 @@ PlayerId Client::id() const { return impl_->id; }
 const Config& Client::config() const { return impl_->config; }
 const Snapshot& Client::latest() const { return impl_->latest; }
 const std::string& Client::error() const { return impl_->error; }
+Snapshot Client::consumeEffects() {
+    auto state=impl_->latest;
+    state.events=std::move(impl_->pendingEvents); state.lasers=std::move(impl_->pendingBeams);
+    impl_->pendingEvents.clear(); impl_->pendingBeams.clear();
+    return state;
+}
 Snapshot Client::interpolated() const {
     auto result = impl_->latest;
     if (impl_->history.size() < 2) return result;

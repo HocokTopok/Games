@@ -81,6 +81,7 @@ std::vector<Vec2> trajectory(const Tank& tank, const Config& c, const Terrain& m
 FlightResult advance(Projectile& p, float dt, const Config& c, const Terrain& map, std::span<const Tank> tanks) {
     FlightResult result;
     const bool orb=p.weapon==WeaponKind::GrowingOrb;
+    const bool ricochet=p.weapon==WeaponKind::Ricochet;
     const float gravity=orb ? 0.f : (p.weapon==WeaponKind::Mortar ? c.gravity*c.weapon.mortarGravityScale : c.gravity);
     const float lifetime=Cannon::lifetime(p,c.weapon);
     float remaining=std::min(dt,std::max(0.f,lifetime-p.age));
@@ -95,7 +96,7 @@ FlightResult advance(Projectile& p, float dt, const Config& c, const Terrain& ma
             if (fraction<wallFraction-0.00001f) { wallFraction=fraction; reflectX=xAxis; reflectY=!xAxis; }
             else if (std::abs(fraction-wallFraction)<0.00001f) { reflectX|=xAxis; reflectY|=!xAxis; }
         };
-        if (orb) {
+        if (orb || ricochet) {
             if (next.position.x<radius) wall(p.position.x,next.position.x,radius,true);
             if (next.position.x>c.worldWidth-radius) wall(p.position.x,next.position.x,c.worldWidth-radius,true);
             if (next.position.y<radius) wall(p.position.y,next.position.y,radius,false);
@@ -112,11 +113,16 @@ FlightResult advance(Projectile& p, float dt, const Config& c, const Terrain& ma
             if (reflectX) p.velocity.x=-p.velocity.x;
             if (reflectY) p.velocity.y=-p.velocity.y;
             p.velocity=p.velocity*0.5f; ++p.bounces;
+            // A ricochet makes the round larger. Keep its new radius clear of the
+            // wall so a slow round cannot immediately count the same wall twice.
+            const float bounceRadius=Cannon::radius(p,c.weapon);
+            p.position.x=std::clamp(p.position.x,bounceRadius,c.worldWidth-bounceRadius);
+            p.position.y=std::max(bounceRadius,p.position.y);
             result.ricochets[result.ricochetCount++]=p.position;
             remaining*=1-wallFraction;
         } else { p=next; remaining=0; }
     }
-    result.expired=p.age>=lifetime-0.00001f || (!orb && (p.position.x < -100 || p.position.x > c.worldWidth+100 || p.position.y > c.worldHeight+100));
+    result.expired=p.age>=lifetime-0.00001f || (!orb && !ricochet && (p.position.x < -100 || p.position.x > c.worldWidth+100 || p.position.y > c.worldHeight+100));
     return result;
 }
 float areaDamage(Vec2 explosion, const Tank& tank, float radius, float amount, const Config& c) {
@@ -143,8 +149,8 @@ LaserTrace laserTrace(const Tank& tank, const Config& c, const Terrain& map, std
     return {from,end,hit};
 }
 void damage(Tank& tank, float amount, bool lethal) {
-    if (!tank.alive()) return;
+    if (!tank.alive() || tank.shieldRemaining > 0) return;
     tank.hp = lethal ? 0.f : std::max(0.f,tank.hp-std::max(0.f,amount));
 }
-void crush(Tank& tank) { tank.hp = 0; }
+void crush(Tank& tank) { damage(tank,tank.hp,true); }
 }
