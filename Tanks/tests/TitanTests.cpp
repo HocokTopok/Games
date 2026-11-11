@@ -9,7 +9,7 @@ void run() {
     tw::Tank ordinary;
     ordinary.hp = std::numeric_limits<float>::max();
     tw::Physics::damage(ordinary,0,true);
-    require(ordinary.hp == 0,"laser is lethal regardless of finite HP");
+    require(ordinary.hp == 0,"explicit lethal damage bypasses finite HP");
     tw::Tank titan; titan.titan = true; titan.maxHp = titan.hp = 1000;
     tw::Physics::damage(titan,25);
     require(titan.hp == 975 && std::abs(titan.healthRatio()-0.975f) < 0.001f,"Titan has finite health and correctly scaled HP bar");
@@ -31,7 +31,7 @@ void run() {
     const auto shot = world.snapshot();
     require(shot.tanks[0].titan && shot.tanks[1].titan,"both players receive Titan armor");
     require(shot.lasers.size() == 1 && shot.projectiles.empty(),"laser resolves in the firing tick");
-    require(shot.tanks[0].hp == 1000 && shot.tanks[1].hp == 0,"laser remains lethal against a full-health Titan");
+    require(shot.tanks[0].hp == 1000 && shot.tanks[1].hp == 1000-config.weapon.laserDamage,"laser deals finite configured damage");
     require(shot.lasers[0].to.x < shot.tanks[1].position.x,"laser stops at the first tank");
 
     config.asymmetricLoadouts = true; config.worldWidth = 1000;

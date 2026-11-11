@@ -15,7 +15,7 @@ public:
     const Config& config() const { return config_; }
 private:
     void emit(EventKind kind, Vec2 position, PlayerId player);
-    void explode(const Hit& hit, bool lethal = false);
+    void explode(const Hit& hit, bool laser = false);
     void ignite(const Hit& hit, PlayerId owner);
     void updateFire(float dt);
     Config config_;

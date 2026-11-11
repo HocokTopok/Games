@@ -23,7 +23,7 @@ Config Config::load(const std::filesystem::path& path) {
         {"reload_seconds", &c.weapon.reloadSeconds}, {"direct_damage", &c.weapon.directDamage},
         {"splash_damage", &c.weapon.splashDamage}, {"blast_radius", &c.weapon.blastRadius},
         {"projectile_radius", &c.weapon.projectileRadius}, {"barrel_length", &c.weapon.barrelLength},
-        {"projectile_lifetime", &c.weapon.projectileLifetime}, {"laser_reload", &c.weapon.laserReload},
+        {"projectile_lifetime", &c.weapon.projectileLifetime}, {"laser_reload", &c.weapon.laserReload}, {"laser_damage", &c.weapon.laserDamage},
         {"napalm_reload", &c.weapon.napalmReload}, {"napalm_direct_damage", &c.weapon.napalmDirectDamage},
         {"napalm_splash_damage", &c.weapon.napalmSplashDamage}, {"napalm_spread", &c.weapon.napalmSpread},
         {"fire_radius", &c.weapon.fireRadius}, {"fire_duration", &c.weapon.fireDuration},
@@ -78,6 +78,7 @@ void Config::validate() const {
     require(weapon.initialPower >= weapon.minPower && weapon.initialPower <= weapon.maxPower, "initial power");
     require(weapon.reloadSeconds >= 0.1f && weapon.reloadSeconds <= 30, "reload");
     require(weapon.laserReload >= 0.1f && weapon.laserReload <= 5, "laser reload");
+    require(std::isfinite(weapon.laserDamage) && weapon.laserDamage > 0 && weapon.laserDamage <= 10000, "laser damage");
     require(weapon.napalmReload >= 0.05f && weapon.napalmReload <= 2 && weapon.napalmSpread >= 0 && weapon.napalmSpread <= 0.3f, "napalm fire rate / spread");
     require(weapon.napalmDirectDamage >= 0 && weapon.napalmDirectDamage <= 25 && weapon.napalmSplashDamage >= 0 && weapon.napalmSplashDamage <= 25, "napalm damage");
     require(weapon.fireRadius >= 10 && weapon.fireRadius <= 150 && weapon.fireDuration >= 0.1f && weapon.fireDuration <= 15 && weapon.fireDamagePerSecond >= 0 && weapon.fireDamagePerSecond <= 50, "ground fire");

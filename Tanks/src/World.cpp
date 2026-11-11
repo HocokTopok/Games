@@ -32,13 +32,13 @@ void World::disconnect(PlayerId id) {
         tank.hp = 0; emit(EventKind::Destroyed, tank.position, tank.id);
     }
 }
-void World::explode(const Hit& hit, bool lethal) {
+void World::explode(const Hit& hit, bool laser) {
     emit(EventKind::Impact, hit.position, hit.tank);
     for (auto& tank : tanks_) {
         if (!tank.alive()) continue;
-        float damage = Physics::splashDamage(hit.position, tank, config_.weapon);
-        if (tank.id == hit.tank) damage += config_.weapon.directDamage;
-        Physics::damage(tank,damage,lethal && tank.id == hit.tank);
+        float damage = laser ? 0.f : Physics::splashDamage(hit.position, tank, config_.weapon);
+        if (tank.id == hit.tank) damage += laser ? config_.weapon.laserDamage : config_.weapon.directDamage;
+        Physics::damage(tank,damage);
         if (!tank.alive()) emit(EventKind::Destroyed, tank.position, tank.id);
     }
 }

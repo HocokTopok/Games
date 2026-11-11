@@ -45,6 +45,7 @@ bool readConfig(sf::Packet& p, Config& c) {
     c.titanMode = false;
     c.asymmetricLoadouts = false;
     c.titanHealth = 100;
+    c.laserDamageKnown = false;
     std::uint32_t limit{};
     p >> c.worldWidth >> c.worldHeight >> c.groundHeight >> c.hillHeight >> c.gravity >> c.fixedStep
       >> c.tankSpeed >> c.turretSpeed >> c.powerSpeed >> c.tankHalfWidth >> c.tankHalfHeight >> c.spawnInset
@@ -307,7 +308,7 @@ struct Server::Impl {
             writeConfig(welcome,config,!(config.asymmetricLoadouts && peer.id == 0));
             welcome << extensionMagic << extensionVersion << (config.titanMode && peer.nativeHealth) << config.weapon.laserReload;
             writeLoadoutConfig(welcome, config);
-            if (peer.nativeHealth) welcome << healthMagic << healthVersion << config.titanHealth;
+            if (peer.nativeHealth) welcome << healthMagic << healthVersion << config.titanHealth << config.weapon.laserDamage;
             peer.channel.queue(std::move(welcome));
             return;
         }
@@ -424,7 +425,13 @@ void Client::poll() {
                     if (version >= 2) readLoadoutConfig(p, impl_->config);
                     if (p && !p.endOfPacket()) {
                         p >> marker >> version;
-                        if (marker == healthMagic && version == healthVersion) p >> impl_->config.titanHealth;
+                        if (marker == healthMagic && version == healthVersion) {
+                            p >> impl_->config.titanHealth;
+                            if (p && !p.endOfPacket()) {
+                                p >> impl_->config.weapon.laserDamage;
+                                impl_->config.laserDamageKnown = static_cast<bool>(p);
+                            }
+                        }
                     }
                     valid = static_cast<bool>(p);
                     if (valid) try { impl_->config.validate(); } catch (...) { valid = false; }

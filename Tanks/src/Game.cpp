@@ -153,7 +153,7 @@ void Game::lobby(Vec2 mouse) {
     const std::string endpoint = server_ ? localAddress_ + ":" + std::to_string(server_->port()) : address_;
     renderer_.text("LAN  /  " + endpoint,{103,154},25,Renderer::accent);
     const auto health = std::to_string(static_cast<int>(activeConfig().titanHealth));
-    renderer_.text(activeConfig().titanMode ? "TITAN DUEL / " + health + " HP per pilot. Lasers and aerial stomps are lethal." : "Choose a unique color. The match begins when everyone is ready.",{103,201},23,Renderer::muted);
+    renderer_.text(activeConfig().titanMode ? "TITAN DUEL / " + health + " HP per pilot. Aerial stomps are lethal." : "Choose a unique color. The match begins when everyone is ready.",{103,201},23,Renderer::muted);
     const auto local = client_ ? client_->id() : noPlayer;
     const Player* me = nullptr;
     const unsigned limit = activeConfig().playerLimit;

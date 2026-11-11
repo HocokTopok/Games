@@ -350,7 +350,7 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool netw
         const bool napalm = tank->weapon == WeaponKind::Napalm, laser = tank->weapon == WeaponKind::Laser;
         text(napalm ? "NAPALM / MACHINE GUN" : (laser ? "TITAN / PHOTON CORE" : "CANNON / 01"),{535,774},16,napalm ? sf::Color{255,160,65} : muted);
         const float power = laser ? 1.f : std::clamp((tank->power - c.weapon.minPower) / (c.weapon.maxPower - c.weapon.minPower),0.f,1.f);
-        text(laser ? "DAMAGE" : "POWER",{535,805},17,white); text(laser ? "INF" : std::to_string(static_cast<int>(power*100)) + "%",{735,801},24,color);
+        text(laser ? "DAMAGE" : "POWER",{535,805},17,white); text(laser ? (c.laserDamageKnown ? std::to_string(static_cast<int>(c.weapon.laserDamage)) : "HOST") : std::to_string(static_cast<int>(power*100)) + "%",{735,801},24,color);
         box({535,842},{230,4},{39,57,70}); box({535,842},{230*power,4},color);
         line({795,783},{795,845},{42,63,79});
         const float loaded = 1 - tank->reload / (napalm ? c.weapon.napalmReload : (laser ? c.weapon.laserReload : c.weapon.reloadSeconds));

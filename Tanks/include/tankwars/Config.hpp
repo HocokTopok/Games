@@ -7,7 +7,7 @@ struct WeaponSpec {
     float minPower{350}, maxPower{1100}, initialPower{850};
     float reloadSeconds{2.2f}, directDamage{48}, splashDamage{36}, blastRadius{86};
     float projectileRadius{3}, barrelLength{37}, projectileLifetime{9};
-    float laserReload{0.25f};
+    float laserReload{1.2f}, laserDamage{120};
     float napalmReload{0.1f}, napalmDirectDamage{3}, napalmSplashDamage{2}, napalmSpread{0.075f};
     float fireRadius{60}, fireDuration{4}, fireDamagePerSecond{7};
     float burnDuration{2.5f}, burnDamagePerSecond{3};
@@ -21,6 +21,7 @@ struct Config {
     unsigned playerLimit{2}, windowWidth{1440}, windowHeight{810}, frameLimit{120};
     bool teams{false}, titanMode{false};
     float titanHealth{1000};
+    bool laserDamageKnown{true};
     bool asymmetricLoadouts{true};
     float jumpSpeed{300}, flightSpeed{340}, flightAcceleration{1100}, descentSpeed{420};
     WeaponSpec weapon;
