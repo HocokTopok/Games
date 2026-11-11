@@ -58,7 +58,7 @@ void run() {
     require(a.latest().players.size()==1,"rematch lobby cleaned");
 }
 void runLoadouts() {
-    tw::Config config; config.titanMode=true;
+    tw::Config config; config.titanMode=true; config.titanHealth=1250;
     config.weapon.fireRadius=72; config.flightSpeed=375; config.weapon.napalmReload=0.08f;
     tw::net::Server server(config,0);
     tw::net::Client a,b;
@@ -67,6 +67,7 @@ void runLoadouts() {
     require(b.connect("127.0.0.1",server.port(),"FLYER"),"flying guest connects");
     until(a,b,[&]{return b.welcomed() && a.latest().players.size()==2;});
     require(b.config().asymmetricLoadouts && b.config().titanMode,"loadout mode synchronized");
+    require(b.config().titanHealth == 1250,"custom finite Titan health synchronized");
     require(b.config().gravity==config.gravity && b.config().weapon.maxPower==config.weapon.maxPower &&
             b.config().weapon.reloadSeconds==config.weapon.reloadSeconds,"real ballistics preserved for napalm in titan mode");
     require(b.config().weapon.fireRadius==72 && b.config().flightSpeed==375 && b.config().weapon.napalmReload==0.08f,"custom fire and flight balance synchronized");
@@ -88,7 +89,7 @@ void runLoadouts() {
             a.latest().tanks[1].verticalVelocity<=0,"guest flight reaches authoritative snapshots");
     require(!a.latest().fires.empty() && !b.latest().fires.empty() && b.latest().tanks[0].burnRemaining>0,"ground fire and burning replicate to both clients");
     require(std::ranges::any_of(b.latest().events,[](const auto& e){return e.kind==tw::EventKind::NapalmImpact;}),"napalm impact kind synchronized");
-    require(b.latest().tanks[0].hp==100,"existing titan armor preserved");
+    require(b.latest().tanks[0].hp > 0 && b.latest().tanks[0].hp < 1250 && b.latest().tanks[0].maxHp == 1250,"napalm and fire drain finite Titan health on the server");
     const auto landing=std::chrono::steady_clock::now()+2500ms;
     while (std::chrono::steady_clock::now()<landing) {
         a.sendInput({0,-0.6f,0,false}); b.sendInput({0,-2.5f,0,false,-1});

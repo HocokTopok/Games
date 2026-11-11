@@ -18,6 +18,9 @@ enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, 
 constexpr std::uint32_t magic = 0x54414e4b;
 constexpr std::uint32_t extensionMagic = 0x54575831;
 constexpr std::uint16_t extensionVersion = 2;
+constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1;
+constexpr std::uint32_t healthMagic = 0x48505731;
+constexpr std::uint16_t healthVersion = 1;
 constexpr std::size_t maxFrame = 65536, maxQueued = 262144;
 
 sf::Packet packet(Message type) { sf::Packet p; p << static_cast<std::uint8_t>(type); return p; }
@@ -41,6 +44,7 @@ void writeConfig(sf::Packet& p, const Config& source, bool laserGuide) {
 bool readConfig(sf::Packet& p, Config& c) {
     c.titanMode = false;
     c.asymmetricLoadouts = false;
+    c.titanHealth = 100;
     std::uint32_t limit{};
     p >> c.worldWidth >> c.worldHeight >> c.groundHeight >> c.hillHeight >> c.gravity >> c.fixedStep
       >> c.tankSpeed >> c.turretSpeed >> c.powerSpeed >> c.tankHalfWidth >> c.tankHalfHeight >> c.spawnInset
@@ -67,19 +71,20 @@ void readLoadoutConfig(sf::Packet& p, Config& c) {
       >> c.weapon.fireRadius >> c.weapon.fireDuration >> c.weapon.fireDamagePerSecond
       >> c.weapon.burnDuration >> c.weapon.burnDamagePerSecond;
 }
-void writeState(sf::Packet& p, const Snapshot& s) {
+void writeState(sf::Packet& p, const Snapshot& s, bool nativeHealth) {
     p << s.tick << s.round << static_cast<std::uint8_t>(s.phase) << s.winner << s.elapsed;
     p << static_cast<std::uint8_t>(s.players.size());
     for (const auto& v : s.players) p << v.id << v.color << v.team << v.connected << v.ready << v.bot << v.name;
     p << static_cast<std::uint8_t>(s.tanks.size());
     for (const auto& t : s.tanks) p << t.id << t.color << t.team << t.position << t.bodyAngle << t.aim
-        << t.power << t.hp << t.reload << t.track << t.recoil;
+        << t.power << (nativeHealth ? t.hp : t.healthRatio()*100.f) << t.reload << t.track << t.recoil;
     p << static_cast<std::uint16_t>(s.projectiles.size());
     for (const auto& v : s.projectiles) p << v.id << v.owner << v.position << v.velocity << v.age;
     p << static_cast<std::uint16_t>(s.events.size());
     for (const auto& e : s.events) p << e.id << static_cast<std::uint8_t>(e.kind == EventKind::NapalmImpact ? EventKind::Impact : e.kind) << e.position << e.player;
     p << extensionMagic << extensionVersion << static_cast<std::uint8_t>(s.tanks.size());
-    for (const auto& t : s.tanks) p << t.id << t.titan;
+    // Older HUDs interpret this flag as invulnerability and expect HP on a 0-100 scale.
+    for (const auto& t : s.tanks) p << t.id << (t.titan && nativeHealth);
     p << static_cast<std::uint16_t>(s.lasers.size());
     for (const auto& beam : s.lasers) p << beam.id << beam.owner << beam.from << beam.to;
     for (const auto& t : s.tanks) p << static_cast<std::uint8_t>(t.weapon) << t.canFly << t.verticalVelocity << t.burnRemaining;
@@ -87,6 +92,10 @@ void writeState(sf::Packet& p, const Snapshot& s) {
     p << static_cast<std::uint16_t>(s.fires.size());
     for (const auto& fire : s.fires) p << fire.id << fire.owner << fire.position << fire.remaining << fire.radius;
     for (const auto& e : s.events) p << static_cast<std::uint8_t>(e.kind);
+    if (nativeHealth) {
+        p << healthMagic << healthVersion << static_cast<std::uint8_t>(s.tanks.size());
+        for (const auto& tank : s.tanks) p << tank.id << tank.maxHp;
+    }
 }
 bool readState(sf::Packet& p, Snapshot& s) {
     std::uint8_t phase{}, count{};
@@ -177,6 +186,25 @@ bool readState(sf::Packet& p, Snapshot& s) {
             event.kind = static_cast<EventKind>(kind);
         }
     }
+    if (!p) return false;
+    if (!p.endOfPacket()) {
+        p >> marker >> version;
+        if (!p) return false;
+        if (marker == healthMagic && version == healthVersion) {
+            p >> count;
+            if (!p || count != s.tanks.size()) return false;
+            seen = {};
+            for (unsigned i = 0; i < count; ++i) {
+                PlayerId id{}; float maximum{};
+                p >> id >> maximum;
+                if (!p || id >= maxPlayers || seen[id] || !std::isfinite(maximum) || maximum < 1 || maximum > 1000000) return false;
+                seen[id] = true;
+                auto tank = std::ranges::find(s.tanks,id,&Tank::id);
+                if (tank == s.tanks.end() || tank->hp < 0 || tank->hp > maximum) return false;
+                tank->maxHp = maximum;
+            }
+        }
+    }
     return static_cast<bool>(p);
 }
 
@@ -242,6 +270,7 @@ struct Server::Impl {
     struct Peer {
         Channel channel;
         PlayerId id{noPlayer};
+        bool nativeHealth{};
         Clock::time_point lastInput{Clock::now()};
     };
     std::vector<std::unique_ptr<Peer>> peers;
@@ -261,6 +290,12 @@ struct Server::Impl {
             if (type != static_cast<std::uint8_t>(Message::Hello)) { peer.channel.alive = false; return; }
             p >> sig >> version >> name;
             if (!p || sig != magic || version != protocolVersion || name.size() > 18) { peer.channel.alive = false; return; }
+            if (!p.endOfPacket()) {
+                std::uint32_t marker{}, capabilities{};
+                p >> marker >> capabilities;
+                if (!p) { peer.channel.alive = false; return; }
+                peer.nativeHealth = marker == capabilityMagic && (capabilities & healthCapability) != 0;
+            }
             for (char& ch : name) if (ch < 32 || ch > 126) ch = '?';
             auto id = session.addPlayer(name.empty() ? "PILOT" : name);
             if (!id) {
@@ -270,8 +305,9 @@ struct Server::Impl {
             peer.id = *id;
             auto welcome = packet(Message::Welcome); welcome << peer.id;
             writeConfig(welcome,config,!(config.asymmetricLoadouts && peer.id == 0));
-            welcome << extensionMagic << extensionVersion << config.titanMode << config.weapon.laserReload;
+            welcome << extensionMagic << extensionVersion << (config.titanMode && peer.nativeHealth) << config.weapon.laserReload;
             writeLoadoutConfig(welcome, config);
+            if (peer.nativeHealth) welcome << healthMagic << healthVersion << config.titanHealth;
             peer.channel.queue(std::move(welcome));
             return;
         }
@@ -325,8 +361,12 @@ struct Server::Impl {
             while (accumulator >= config.fixedStep) { session.step(); accumulator -= config.fixedStep; }
             if (snapshotTimer >= 1.0 / config.snapshotRate) {
                 snapshotTimer = std::fmod(snapshotTimer, 1.0 / config.snapshotRate);
-                auto state = packet(Message::State); writeState(state, session.snapshot());
-                for (auto& peer : peers) if (peer->id != noPlayer) peer->channel.queue(state);
+                const auto snapshot = session.snapshot();
+                for (auto& peer : peers) if (peer->id != noPlayer) {
+                    auto state = packet(Message::State);
+                    writeState(state,snapshot,peer->nativeHealth);
+                    peer->channel.queue(std::move(state));
+                }
             }
             for (auto& peer : peers) peer->channel.flush();
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -358,7 +398,9 @@ bool Client::connect(const std::string& address, unsigned short port, const std:
         impl_->error = "Could not connect. Check IP, port, and the host's firewall."; return false;
     }
     channel->socket->setBlocking(false); impl_->channel = std::move(channel);
-    auto hello = packet(Message::Hello); hello << magic << protocolVersion << name.substr(0, 18); impl_->queue(std::move(hello));
+    auto hello = packet(Message::Hello);
+    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << healthCapability;
+    impl_->queue(std::move(hello));
     return true;
 }
 void Client::disconnect() { impl_->channel.reset(); impl_->id = noPlayer; impl_->history.clear(); impl_->latest = {}; }
@@ -380,6 +422,10 @@ void Client::poll() {
                 if (valid && marker == extensionMagic && version >= 1 && version <= extensionVersion) {
                     p >> impl_->config.titanMode >> impl_->config.weapon.laserReload;
                     if (version >= 2) readLoadoutConfig(p, impl_->config);
+                    if (p && !p.endOfPacket()) {
+                        p >> marker >> version;
+                        if (marker == healthMagic && version == healthVersion) p >> impl_->config.titanHealth;
+                    }
                     valid = static_cast<bool>(p);
                     if (valid) try { impl_->config.validate(); } catch (...) { valid = false; }
                 }

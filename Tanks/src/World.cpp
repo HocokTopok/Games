@@ -16,6 +16,7 @@ void World::reset(const std::vector<Player>& players) {
             x < config_.worldWidth / 2 ? -0.65f : -pi + 0.65f, config_.weapon.initialPower});
         auto& tank = tanks_.back();
         tank.titan = config_.titanMode;
+        tank.maxHp = tank.hp = tank.titan ? config_.titanHealth : 100.f;
         tank.weapon = config_.asymmetricLoadouts && p.id == 0 ? WeaponKind::Napalm :
                       (config_.titanMode ? WeaponKind::Laser : WeaponKind::Cannon);
         tank.canFly = config_.asymmetricLoadouts && p.id == 1;

@@ -312,7 +312,7 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
         }
         if (t.burnRemaining > 0) for (int i = 0; i < 4; ++i) flame(t.position + Vec2{-19.f + i * 12,-9}, 10, t.id * 10.f + i);
         const auto col = playerColor(t.color);
-        box(t.position + Vec2{-25,-49},{50,3},{33,47,60}); box(t.position + Vec2{-25,-49},{50 * t.hp / 100,3},col);
+        box(t.position + Vec2{-25,-49},{50,3},{33,47,60}); box(t.position + Vec2{-25,-49},{50 * t.healthRatio(),3},col);
         if (t.id == local) { text("YOU",t.position + Vec2{0,-80},17,col,true); line(t.position + Vec2{-3,-58},t.position + Vec2{0,-55},col); line(t.position + Vec2{0,-55},t.position + Vec2{3,-58},col); }
     }
     effects();
@@ -338,8 +338,9 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool netw
         const auto color = playerColor(p.color);
         box({x,94},{cardWidth,83},{11,22,36,225},{39,58,75}); box({x,94},{3,83},color);
         text(p.name + (p.id == local ? " / YOU" : ""),{x+18,104},19,color);
-        text(t ? (t->titan && t->alive() ? "INF" : std::to_string(static_cast<int>(std::ceil(t->hp)))) : "--",{x+cardWidth-48,99},28,white);
-        box({x+18,146},{cardWidth-36,5},{38,54,69}); if (t) box({x+18,146},{(cardWidth-36)*t->hp/100,5},color);
+        const auto hp = t ? std::to_string(static_cast<int>(std::ceil(t->hp))) : "--";
+        text(hp,{x+cardWidth-20-static_cast<float>(hp.size())*14,99},28,white);
+        box({x+18,146},{cardWidth-36,5},{38,54,69}); if (t) box({x+18,146},{(cardWidth-36)*t->healthRatio(),5},color);
         if (t && !t->alive()) text("OFFLINE",{x+18,154},14,muted);
     }
     const auto* tank = findTank(s,local);

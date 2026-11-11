@@ -59,7 +59,9 @@ struct Tank {
     WeaponKind weapon{WeaponKind::Cannon};
     bool canFly{};
     float verticalVelocity{}, burnRemaining{};
+    float maxHp{100};
     bool alive() const { return hp > 0.f; }
+    float healthRatio() const { return std::clamp(hp / std::max(1.f,maxHp),0.f,1.f); }
     Vec2 pivot() const { return position + rotate({0, -12}, bodyAngle); }
     Vec2 muzzle(float barrelLength) const { return pivot() + direction(aim) * barrelLength; }
 };

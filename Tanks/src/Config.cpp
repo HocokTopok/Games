@@ -29,7 +29,8 @@ Config Config::load(const std::filesystem::path& path) {
         {"fire_radius", &c.weapon.fireRadius}, {"fire_duration", &c.weapon.fireDuration},
         {"fire_damage_per_second", &c.weapon.fireDamagePerSecond}, {"burn_duration", &c.weapon.burnDuration},
         {"burn_damage_per_second", &c.weapon.burnDamagePerSecond}, {"jump_speed", &c.jumpSpeed},
-        {"flight_speed", &c.flightSpeed}, {"flight_acceleration", &c.flightAcceleration}, {"descent_speed", &c.descentSpeed}
+        {"flight_speed", &c.flightSpeed}, {"flight_acceleration", &c.flightAcceleration}, {"descent_speed", &c.descentSpeed},
+        {"titan_health", &c.titanHealth}
     };
     std::string line;
     unsigned lineNo = 0;
@@ -71,6 +72,7 @@ void Config::validate() const {
     require(gravity >= 50 && gravity <= 3000 && fixedStep >= 1.f / 300.f && fixedStep <= 1.f / 30.f, "gravity / time step");
     require(tankSpeed > 0 && tankSpeed <= 300 && turretSpeed > 0 && turretSpeed <= 20 && powerSpeed > 0 && powerSpeed <= 2000, "tank speeds");
     require(tankHalfWidth >= 15 && tankHalfWidth <= 40 && tankHalfHeight >= 8 && tankHalfHeight <= 22, "tank bounds");
+    require(std::isfinite(titanHealth) && titanHealth >= 100 && titanHealth <= 1000000, "Titan health");
     require(spawnInset >= 100 && spawnInset < worldWidth / 3, "spawn inset");
     require(weapon.minPower >= 50 && weapon.maxPower > weapon.minPower && weapon.maxPower <= 4000, "power range");
     require(weapon.initialPower >= weapon.minPower && weapon.initialPower <= weapon.maxPower, "initial power");

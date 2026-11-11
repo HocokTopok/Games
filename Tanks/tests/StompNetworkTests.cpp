@@ -32,10 +32,11 @@ void run() {
     drive([&] { return flyer.latest().tanks[1].position.x <= 500; },{-1,-tw::pi,0,false,0});
     drive([&] { return flyer.latest().tanks[1].position.y < 400; },{0,-tw::pi,0,false,1});
     drive([&] { return flyer.latest().tanks[1].position.x <= 305; },{-1,-tw::pi,0,false,1});
-    require(flyer.latest().tanks[0].hp == 100,"target stays immune until contact from above");
+    require(flyer.latest().tanks[0].hp == config.titanHealth,"flight alone does not damage the target");
     drive([&] { return ground.latest().phase == tw::Phase::Victory && flyer.latest().phase == tw::Phase::Victory; },{0,-tw::pi,0,false,-1});
     for (const auto* state : {&ground.latest(),&flyer.latest()}) {
-        require(state->winner == 1 && state->tanks[0].hp == 0 && state->tanks[1].hp == 100,"both clients agree on lethal stomp and winner");
+        require(state->winner == 1 && state->tanks[0].hp == 0 && state->tanks[1].hp == config.titanHealth,"both clients agree on lethal stomp and winner");
+        require(state->tanks[0].maxHp == config.titanHealth && state->tanks[1].maxHp == config.titanHealth,"both clients receive the authoritative health capacity");
         require(std::ranges::any_of(state->events,[](const auto& e) { return e.kind == tw::EventKind::Destroyed && e.player == 0; }),"destruction event replicated to each pilot");
     }
 }

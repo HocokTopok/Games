@@ -20,6 +20,7 @@ struct Config {
     unsigned short port{53000};
     unsigned playerLimit{2}, windowWidth{1440}, windowHeight{810}, frameLimit{120};
     bool teams{false}, titanMode{false};
+    float titanHealth{1000};
     bool asymmetricLoadouts{true};
     float jumpSpeed{300}, flightSpeed{340}, flightAcceleration{1100}, descentSpeed{420};
     WeaponSpec weapon;

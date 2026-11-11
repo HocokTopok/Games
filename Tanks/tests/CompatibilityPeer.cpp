@@ -32,6 +32,12 @@ int main(int argc,char** argv) {
             if (state.phase == tw::Phase::Playing) {
                 const auto* tank = tw::findTank(state,client.id());
                 if (tank) {
+#ifdef TANKWARS_NATIVE_HEALTH
+                    if (tank->hp < 0 || tank->hp > tank->maxHp) throw std::runtime_error("Invalid native health capacity");
+                    if (client.config().titanMode && tank->maxHp != client.config().titanHealth) throw std::runtime_error("Titan health not synchronized");
+#else
+                    if (tank->hp < 0 || tank->hp > 100) throw std::runtime_error("Legacy health was not normalized to 0-100");
+#endif
                     if (!playing) { firstX = tank->position.x; playing = true; playedSince = std::chrono::steady_clock::now(); }
                     latestX = tank->position.x;
                 }

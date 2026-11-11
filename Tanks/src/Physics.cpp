@@ -100,7 +100,7 @@ LaserTrace laserTrace(const Tank& tank, const Config& c, const Terrain& map, std
     return {from,end,hit};
 }
 void damage(Tank& tank, float amount, bool lethal) {
-    if (!tank.alive() || tank.titan) return;
+    if (!tank.alive()) return;
     tank.hp = lethal ? 0.f : std::max(0.f,tank.hp-std::max(0.f,amount));
 }
 void crush(Tank& tank) { tank.hp = 0; }

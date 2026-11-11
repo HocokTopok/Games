@@ -121,7 +121,7 @@ void Game::mainMenu(Vec2 mouse) {
     renderer_.text("REAL-TIME ARTILLERY / VOL. 01",{100,105},20,Renderer::accent);
     renderer_.text("TANK",{90,150},132,Renderer::white);
     renderer_.text("WARS",{90,262},132,Renderer::white);
-    renderer_.text(config_.titanMode ? "Infinite armor. Unstoppable light." : "A quiet battlefield. A perfect shot.",{101,418},25,Renderer::muted);
+    renderer_.text(config_.titanMode ? "Heavy armor. Unstoppable light." : "A quiet battlefield. A perfect shot.",{101,418},25,Renderer::muted);
     if (renderer_.button({100,483},{390,74},"PLAY",config_.titanMode ? (config_.asymmetricLoadouts ? "Titan duel / napalm vs photon" : "Titan vs Titan / photon sandbox") : "Solo duel against Sentinel",mouse,clicked_,true)) { play(); return; }
     if (renderer_.button({100,572},{185,62},"HOST","Create LAN room",mouse,clicked_)) { host(); return; }
     if (renderer_.button({305,572},{185,62},"JOIN","Connect by IP",mouse,clicked_)) { screen_ = Screen::Join; status_.clear(); }
@@ -152,7 +152,8 @@ void Game::lobby(Vec2 mouse) {
     renderer_.text(server_ ? "YOUR ROOM" : "CONNECTED",{100,80},56,Renderer::white);
     const std::string endpoint = server_ ? localAddress_ + ":" + std::to_string(server_->port()) : address_;
     renderer_.text("LAN  /  " + endpoint,{103,154},25,Renderer::accent);
-    renderer_.text(activeConfig().titanMode ? (activeConfig().asymmetricLoadouts ? "TITAN DUEL / Napalm host, airborne photon rival. Land on a rival to destroy it." : "TITAN MODE / Infinite armor and photon cannons for every pilot.") : "Choose a unique color. The match begins when everyone is ready.",{103,201},23,Renderer::muted);
+    const auto health = std::to_string(static_cast<int>(activeConfig().titanHealth));
+    renderer_.text(activeConfig().titanMode ? "TITAN DUEL / " + health + " HP per pilot. Lasers and aerial stomps are lethal." : "Choose a unique color. The match begins when everyone is ready.",{103,201},23,Renderer::muted);
     const auto local = client_ ? client_->id() : noPlayer;
     const Player* me = nullptr;
     const unsigned limit = activeConfig().playerLimit;
