@@ -36,8 +36,9 @@ struct Input {
     float lift{};
 };
 enum class Phase : std::uint8_t { Lobby, Playing, Victory };
-enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup };
-enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb, Ricochet };
+enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike };
+// GrowingOrb is retained only for the legacy preset/protocol; the menu has one ricochet weapon.
+enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb, Ricochet, Flare };
 struct GameEvent {
     std::uint32_t id{};
     EventKind kind{};
@@ -92,6 +93,12 @@ struct FirePatch {
     float remaining{}, radius{};
     float damageScale{1};
 };
+struct SkyStrike {
+    std::uint32_t id{};
+    PlayerId owner{};
+    Vec2 position{};
+    float age{}, radius{}, damageScale{1};
+};
 enum class PickupKind : std::uint8_t { Health, Damage, Shield };
 struct SupplyDrop {
     std::uint32_t id{};
@@ -112,6 +119,7 @@ struct Snapshot {
     std::vector<GameEvent> events;
     std::vector<LaserBeam> lasers;
     std::vector<FirePatch> fires;
+    std::vector<SkyStrike> skyStrikes;
     bool detailedWeapons{};
     bool battlefieldData{}, mapSelected{};
     std::uint8_t mapId{};

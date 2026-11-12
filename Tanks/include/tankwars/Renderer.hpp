@@ -44,6 +44,7 @@ private:
     void weaponProjectile(const Projectile& projectile, const Config& config, const std::vector<Vec2>& trail);
     void addWeaponEffect(const GameEvent& event);
     void weaponEffects();
+    void skyStrikes(const Config& config, const Snapshot& state);
     sf::RenderTarget& window_;
     sf::Font font_;
     sf::View uiView_{{800, 450}, {1600, 900}}, worldView_{{800, 450}, {1600, 900}};

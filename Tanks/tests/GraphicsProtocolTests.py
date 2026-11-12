@@ -83,7 +83,7 @@ def main():
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
     config_file = tempfile.NamedTemporaryFile(mode="w", suffix=".cfg")
-    config_file.write(Path(sys.argv[2]).read_text().replace("loadout_selection = 1", "loadout_selection = 0"))
+    config_file.write(Path(sys.argv[2]).read_text().replace("loadout_selection = 1", "loadout_selection = 0").replace("world_width = 1600", "world_width = 2200"))
     config_file.flush()
     server = subprocess.Popen([sys.argv[1], "server", str(port), config_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     peers = []
@@ -120,7 +120,7 @@ def main():
                         continue
                     phase, projectiles, events = state(payload)
                     seen[i].update(kind for kind, _ in projectiles)
-                    if any(kind == 4 and radius == 68 for kind, radius, _ in events):
+                    if any(kind == 4 and radius == 78 for kind, radius, _ in events):
                         seen[i].add("blast")
                     if {3, 4, "blast"} <= seen[0] and {3, 4, "blast"} <= seen[1]:
                         print("Graphics protocol passed: full orb, mortar and explosion data with absent and partial capabilities")

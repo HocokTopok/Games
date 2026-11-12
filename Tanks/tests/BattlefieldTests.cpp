@@ -16,7 +16,7 @@ void selection() {
     game.setReady(0,true); game.setReady(1,true); game.step();
     require(!game.snapshot().players[0].ready && game.snapshot().phase==tw::Phase::Lobby,"must select a weapon before confirmation");
     require(!game.setMap(0,0),"map cannot be chosen before weapons");
-    require(!game.setWeapon(0,tw::WeaponKind::Cannon),"removed cannon cannot be selected");
+    require(!game.setWeapon(0,tw::WeaponKind::Cannon) && !game.setWeapon(0,tw::WeaponKind::GrowingOrb),"cannon and duplicate orb cannot be selected");
     for (auto weapon : tw::selectableWeapons) require(game.setWeapon(0,weapon),"all five weapons available");
     game.setWeapon(0,tw::WeaponKind::Napalm); game.setWeapon(1,tw::WeaponKind::Ricochet);
     game.setReady(0,true); game.setReady(1,true); game.step();
@@ -66,20 +66,23 @@ void mudMovement() {
 void weapons() {
     tw::Config c; c.hillHeight=0; c.titanMode=true;
     tw::World world(c); auto p=players(tw::WeaponKind::Ricochet,tw::WeaponKind::Mortar); world.reset(p);
-    tw::Projectile shot{1,0,{1500,200},{1200,-100},0}; shot.weapon=tw::WeaponKind::Ricochet;
+    tw::Projectile shot{1,0,{1400,200},{1200,-100},0}; shot.weapon=tw::WeaponKind::Ricochet;
     const float radius=tw::Cannon::radius(shot,c.weapon);
     auto result=tw::Physics::advance(shot,0.08f,c,world.map(),{});
     require(!result.hit && shot.velocity.y>-100 && shot.position.y<200,"ricochet has gravity and a parabolic arc");
     shot.position={1590,200}; shot.velocity={1200,0};
     result=tw::Physics::advance(shot,0.02f,c,world.map(),{});
     require(!result.hit && shot.bounces==1 && shot.velocity.x<0 && std::abs(shot.velocity.x+600)<1,"first wall bounce halves speed");
-    require(tw::Cannon::radius(shot,c.weapon)>radius && tw::Cannon::ricochetDamage(shot.bounces)==30,"first bounce strengthens damage and effect");
+    require(tw::Cannon::radius(shot,c.weapon)>radius && tw::Cannon::ricochetDamage(shot.bounces)==40,"first bounce strengthens damage and effect");
     shot.position={8,200}; shot.velocity={-600,0};
     result=tw::Physics::advance(shot,0.02f,c,world.map(),{});
-    require(!result.hit && shot.bounces==2 && near(shot.velocity.x,300) && tw::Cannon::ricochetDamage(2)==40,"second bounce gives 40 damage and halves speed");
+    require(!result.hit && shot.bounces==2 && near(shot.velocity.x,300) && tw::Cannon::ricochetDamage(2)==50,"second bounce gives 50 damage and halves speed");
     shot.position={1592,200}; shot.velocity={300,0};
     result=tw::Physics::advance(shot,0.03f,c,world.map(),{});
-    require(result.hit && shot.bounces==2,"third wall contact detonates");
+    require(!result.hit && shot.bounces==3 && tw::Cannon::ricochetDamage(3)==60,"third wall contact gives the last bounce and 60 damage");
+    shot.position={tw::Cannon::radius(shot,c.weapon)+0.1f,200}; shot.velocity={-150,0};
+    result=tw::Physics::advance(shot,0.03f,c,world.map(),{});
+    require(result.hit && shot.bounces==3,"fourth wall contact detonates");
     shot={1,0,{6.5f,200},{-245,0},0}; shot.weapon=tw::WeaponKind::Ricochet; shot.bounces=1;
     result=tw::Physics::advance(shot,0.01f,c,world.map(),{});
     require(!result.hit && shot.bounces==2,"slow second ricochet survives its increased radius");
@@ -93,7 +96,7 @@ void weapons() {
     for (auto kind : tw::selectableWeapons) {
         world.reset(players(kind,tw::WeaponKind::Mortar));
         const auto surface=world.snapshot().terrain; std::array<tw::Input,tw::maxPlayers> input{};
-        const float aim=kind==tw::WeaponKind::Mortar ? -0.65f : tw::pi/2;
+        const float aim=kind==tw::WeaponKind::Mortar ? -1.1f : tw::pi/2;
         input[0].aim=aim;
         for (int i=0;i<120;++i) world.step(input);
         input[0].fire=true; world.step(input); input[0].fire=false;

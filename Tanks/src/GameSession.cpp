@@ -60,8 +60,8 @@ Input GameSession::botInput(const Tank& tank) const {
         const float aim=std::atan2(delta.y,delta.x);
         return {0,aim,0,std::abs(angleDelta(tank.aim,aim))<0.04f};
     }
-    const float gravity=config_.gravity*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarGravityScale : 1.f);
-    const float launchSpeed=speed*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarSpeedScale : (tank.weapon==WeaponKind::Ricochet ? config_.weapon.ricochetSpeedScale : 1.f));
+    const float gravity=config_.gravity*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarGravityScale : (tank.weapon==WeaponKind::Flare ? config_.weapon.flareGravityScale : 1.f));
+    const float launchSpeed=speed*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarSpeedScale : (tank.weapon==WeaponKind::Ricochet ? config_.weapon.ricochetSpeedScale : (tank.weapon==WeaponKind::Flare ? config_.weapon.flareSpeedScale : 1.f)));
     const float disc = std::pow(launchSpeed,4) - gravity * (gravity * x * x - 2 * delta.y * launchSpeed * launchSpeed);
     if (disc <= 0 || x < 1) return {0, tank.aim, 1, false};
     float angle = -std::atan((launchSpeed * launchSpeed + (tank.weapon==WeaponKind::Mortar ? 1.f : -1.f)*std::sqrt(disc)) / (gravity * x));
@@ -89,7 +89,7 @@ void GameSession::step() {
     for (const auto& t : world_.tanks()) if (t.alive()) aliveTeams.insert(t.team);
     const auto state = world_.snapshot();
     const bool burningSurvivor = std::ranges::any_of(state.tanks, [](const auto& t) { return t.alive() && t.burnRemaining > 0; });
-    if (aliveTeams.size() <= 1 && state.projectiles.empty() && state.fires.empty() && !burningSurvivor) {
+    if (aliveTeams.size() <= 1 && state.projectiles.empty() && state.fires.empty() && state.skyStrikes.empty() && !burningSurvivor) {
         phase_ = Phase::Victory;
         for (const auto& t : world_.tanks()) if (t.alive()) { winner_ = t.id; break; }
     }

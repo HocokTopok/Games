@@ -12,7 +12,7 @@ World::World(Config config, std::uint32_t supplySeed) : config_(config) {
 void World::selectMap(Config config) { config_=config; map_=MapFactory::create(config_); }
 void World::reset(const std::vector<Player>& players) {
     map_=MapFactory::create(config_); supplies_.clear(); plane_={}; supplyTimer_=30;
-    tanks_.clear(); projectiles_.clear(); events_.clear(); lasers_.clear(); fires_.clear(); tick_ = 0; ++round_;
+    tanks_.clear(); projectiles_.clear(); events_.clear(); lasers_.clear(); fires_.clear(); skyStrikes_.clear(); tick_ = 0; ++round_;
     constexpr std::array<float, 4> fractions{0, 1, 0.24f, 0.76f};
     std::size_t index = 0;
     for (const auto& p : players) {
@@ -115,6 +115,33 @@ void World::updateFire(float dt) {
         if (!tank.alive()) emit(EventKind::Destroyed, tank.position, tank.id);
     }
 }
+void World::summonSkyStrike(const Hit& hit, const Projectile& p) {
+    const float x=std::clamp(hit.position.x,0.f,config_.worldWidth);
+    const Vec2 position{x,map_->height(x)};
+    // Bounded like the other persistent world effects, including four-player rooms.
+    if (skyStrikes_.size()>=16) skyStrikes_.erase(skyStrikes_.begin());
+    skyStrikes_.push_back({nextProjectile_++,p.owner,position,0,config_.weapon.skyRadius,p.damageScale});
+    emit(EventKind::FlareImpact,position,p.owner,config_.weapon.skyRadius);
+}
+void World::updateSkyStrikes(float dt) {
+    const auto& w=config_.weapon;
+    for (auto& strike : skyStrikes_) {
+        const float before=strike.age;
+        strike.age+=dt;
+        if (before<w.skyWarmup && strike.age>=w.skyWarmup) emit(EventKind::SkyStrike,strike.position,strike.owner,strike.radius);
+        const float active=std::max(0.f,std::min(strike.age,w.skyWarmup+w.skyDuration)-std::max(before,w.skyWarmup));
+        if (active<=0) continue;
+        for (auto& tank : tanks_) {
+            if (!tank.alive() || tank.position.y-config_.tankHalfHeight>strike.position.y) continue;
+            const float distance=std::max(0.f,std::abs(tank.position.x-strike.position.x)-config_.tankHalfWidth);
+            // Full damage in the bright core, a softer edge in the orange halo.
+            const float falloff=std::clamp((strike.radius-distance)/(strike.radius*0.35f),0.f,1.f);
+            Physics::damage(tank,w.skyDamagePerSecond*active*falloff*strike.damageScale);
+            if (!tank.alive()) emit(EventKind::Destroyed,tank.position,tank.id);
+        }
+    }
+    std::erase_if(skyStrikes_,[&](const auto& strike) { return strike.age>=w.skyWarmup+w.skyDuration; });
+}
 void World::step(const std::array<Input, maxPlayers>& inputs) {
     const float dt = config_.fixedStep;
     ++tick_;
@@ -210,7 +237,8 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         const auto result=Physics::advance(p,dt,config_,*map_,tanks_);
         for (unsigned i=0;i<result.ricochetCount;++i) emit(EventKind::Ricochet,result.ricochets[i],p.owner,Cannon::radius(p,config_.weapon),p.weapon==WeaponKind::Ricochet ? Cannon::ricochetDamage(p.bounces)/100.f : Cannon::orbDamage(p.age,config_.weapon)/100.f);
         if (result.hit) {
-            if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet) detonate(*result.hit,p);
+            if (p.weapon==WeaponKind::Flare) summonSkyStrike(*result.hit,p);
+            else if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet) detonate(*result.hit,p);
             else if (p.napalm) ignite(*result.hit, p.owner,p.damageScale); else explode(*result.hit,false,p.damageScale);
             return true;
         }
@@ -218,6 +246,7 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         return result.expired;
     });
     updateFire(dt);
+    updateSkyStrikes(dt);
 }
 void World::updateSupplies(float dt) {
     supplyTimer_-=dt;
@@ -260,7 +289,7 @@ void World::updateSupplies(float dt) {
 Snapshot World::snapshot() const {
     Snapshot s;
     s.tick = tick_; s.round = round_; s.elapsed = static_cast<float>(tick_) * config_.fixedStep;
-    s.tanks = tanks_; s.projectiles = projectiles_; s.events = events_; s.lasers = lasers_; s.fires = fires_;
+    s.tanks = tanks_; s.projectiles = projectiles_; s.events = events_; s.lasers = lasers_; s.fires = fires_; s.skyStrikes=skyStrikes_;
     s.detailedWeapons = true; s.battlefieldData=true; s.mapId=config_.mapId;
     s.terrain=map_->samples(); s.supplies=supplies_; s.plane=plane_;
     return s;

@@ -10,11 +10,13 @@ struct WeaponSpec {
     float projectileRadius{3}, barrelLength{37}, projectileLifetime{9};
     float laserReload{2.4f}, laserDamage{80}, laserDamagePercent{8};
     float ricochetReload{0.42f}, ricochetSpeedScale{1.4f};
-    float napalmReload{0.1f}, napalmDirectDamage{3}, napalmSplashDamage{2}, napalmSpread{0.075f};
-    float fireRadius{60}, fireDuration{4}, fireDamagePerSecond{7};
-    float burnDuration{2.5f}, burnDamagePerSecond{3};
-    float mortarReload{1.6f}, mortarSpeedScale{0.5f}, mortarGravityScale{0.3f}, mortarBlastRadius{68}, mortarDamage{65};
+    float napalmReload{0.12f}, napalmDirectDamage{2.7f}, napalmSplashDamage{1.8f}, napalmSpread{0.075f};
+    float fireRadius{60}, fireDuration{4.f/1.5f}, fireDamagePerSecond{6};
+    float burnDuration{2.5f}, burnDamagePerSecond{2.5f};
+    float mortarReload{1.9f}, mortarSpeedScale{0.56f}, mortarGravityScale{0.3f}, mortarBlastRadius{78}, mortarDamage{100};
     float orbReload{0.85f}, orbSpeedScale{0.75f}, orbGrowthSeconds{5}, orbInitialRadius{4}, orbMaxRadius{30}, orbLifetime{20};
+    float flareReload{12}, flareSpeedScale{0.8f}, flareGravityScale{0.6f};
+    float skyWarmup{0.65f}, skyDuration{4}, skyRadius{85}, skyDamagePerSecond{140};
     float laserHitDamage(float maxHp) const { return laserDamagePercent > 0 ? maxHp * (laserDamagePercent / 100.f) : laserDamage; }
 };
 struct Config {

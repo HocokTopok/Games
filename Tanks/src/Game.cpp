@@ -202,8 +202,8 @@ void Game::lobby(Vec2 mouse) {
         renderer_.text("Share the LAN address above to invite a pilot.",{1160,285},19,Renderer::muted,true);
     }
     if (!chooseMap) {
-        constexpr const char* details[]{"Fire pools / rapid fire", "High arc / smooth craters", "2.4 sec / double damage", "2 bounces / 20 > 30 > 40", "Growing energy / 2 bounces"};
-        constexpr const char* notes[]{"Burns armor and ground", "65 damage / 68 m blast", "Bright instant rail beam", "Fast ballistic projectiles", "Charges from 1 to 100 DMG"};
+        constexpr const char* details[]{"Fire pools / rapid fire", "High arc / 1.9 sec reload", "2.4 sec / 8% max HP", "3 bounces / +10 damage", "12 sec / orbital strike"};
+        constexpr const char* notes[]{"2.67 sec ground fire", "100 damage / 78 m blast", "Bright instant rail beam", "Growing orb / 30 to 60 DMG", "140 DMG/sec for 4 seconds"};
         for (std::size_t i=0;i<selectableWeapons.size();++i) {
             const float x=90+i*290.f; const auto kind=selectableWeapons[i];
             const bool selected=me && me->weaponChosen && me->weapon==kind;

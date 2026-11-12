@@ -3,7 +3,7 @@
 #include "Types.hpp"
 
 namespace tw {
-inline constexpr std::array<WeaponKind,5> selectableWeapons{WeaponKind::Napalm,WeaponKind::Mortar,WeaponKind::Laser,WeaponKind::Ricochet,WeaponKind::GrowingOrb};
+inline constexpr std::array<WeaponKind,5> selectableWeapons{WeaponKind::Napalm,WeaponKind::Mortar,WeaponKind::Laser,WeaponKind::Ricochet,WeaponKind::Flare};
 inline const char* weaponName(WeaponKind kind) {
     switch (kind) {
     case WeaponKind::Napalm: return "NAPALM";
@@ -11,6 +11,7 @@ inline const char* weaponName(WeaponKind kind) {
     case WeaponKind::Laser: return "RAILGUN";
     case WeaponKind::Ricochet: return "RICOCHET";
     case WeaponKind::GrowingOrb: return "PLASMA ORB";
+    case WeaponKind::Flare: return "SOLAR FLARE";
     default: return "CANNON";
     }
 }
@@ -26,18 +27,18 @@ public:
     static Projectile fire(const Tank& tank, const WeaponSpec& spec, std::uint32_t id) {
         const float aim = firingAngle(tank.weapon,tank.aim);
         const float scale = tank.weapon == WeaponKind::Mortar ? spec.mortarSpeedScale :
-                            (tank.weapon == WeaponKind::GrowingOrb ? spec.orbSpeedScale : (tank.weapon == WeaponKind::Ricochet ? spec.ricochetSpeedScale : 1.f));
+                            (tank.weapon == WeaponKind::GrowingOrb ? spec.orbSpeedScale : (tank.weapon == WeaponKind::Ricochet ? spec.ricochetSpeedScale : (tank.weapon == WeaponKind::Flare ? spec.flareSpeedScale : 1.f)));
         Projectile p{id, tank.id, tank.pivot() + direction(aim)*spec.barrelLength, direction(aim) * (tank.power*scale), 0};
         p.damageScale = tank.damageRemaining > 0 ? 1.5f : 1.f;
         p.weapon = tank.weapon; p.napalm = tank.weapon == WeaponKind::Napalm;
         return p;
     }
-    static float ricochetDamage(unsigned bounces) { return 20.f + 10.f * std::min(bounces,2u); }
+    static float ricochetDamage(unsigned bounces) { return 30.f + 10.f * std::min(bounces,3u); }
     static float orbCharge(float age, const WeaponSpec& spec) { return std::clamp(age/spec.orbGrowthSeconds,0.f,1.f); }
     static float orbDamage(float age, const WeaponSpec& spec) { const float t=orbCharge(age,spec); return 1.f+99.f*t*t; }
     static float radius(const Projectile& p, const WeaponSpec& spec) {
-        if (p.weapon == WeaponKind::GrowingOrb) return spec.orbInitialRadius+(spec.orbMaxRadius-spec.orbInitialRadius)*orbCharge(p.age,spec);
-        if (p.weapon == WeaponKind::Ricochet) return 4.f + p.bounces * 1.5f;
+        if (p.weapon == WeaponKind::GrowingOrb || p.weapon == WeaponKind::Ricochet) return spec.orbInitialRadius+(spec.orbMaxRadius-spec.orbInitialRadius)*orbCharge(p.age,spec);
+        if (p.weapon == WeaponKind::Flare) return 5.f;
         return p.weapon == WeaponKind::Mortar ? 6.f : spec.projectileRadius;
     }
     static float reload(WeaponKind kind, const WeaponSpec& spec) {
@@ -47,6 +48,7 @@ public:
         case WeaponKind::GrowingOrb: return spec.orbReload;
         case WeaponKind::Laser: return spec.laserReload;
         case WeaponKind::Napalm: return spec.napalmReload;
+        case WeaponKind::Flare: return spec.flareReload;
         default: return spec.reloadSeconds;
         }
     }

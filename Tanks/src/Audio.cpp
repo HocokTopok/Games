@@ -118,10 +118,11 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
         Cue cue=Cue::Impact; float gain=0.65f; unsigned priority=2;
         switch (e.kind) {
         case EventKind::Shot:
-            cue=owner && owner->weapon==WeaponKind::Mortar ? Cue::MortarShot :
-                (owner && owner->weapon==WeaponKind::GrowingOrb ? Cue::OrbShot : (owner && owner->weapon==WeaponKind::Laser ? Cue::LaserShot : Cue::CannonShot));
+            cue=owner && (owner->weapon==WeaponKind::Mortar || owner->weapon==WeaponKind::Flare) ? Cue::MortarShot :
+                (owner && (owner->weapon==WeaponKind::GrowingOrb || owner->weapon==WeaponKind::Ricochet) ? Cue::OrbShot : (owner && owner->weapon==WeaponKind::Laser ? Cue::LaserShot : Cue::CannonShot));
             gain=0.58f; break;
         case EventKind::MortarImpact: cue=Cue::MortarBlast; gain=0.95f; priority=4; a.duck=1; break;
+        case EventKind::SkyStrike: cue=Cue::MortarBlast; gain=1; priority=4; a.duck=1; break;
         case EventKind::OrbImpact: cue=Cue::OrbBlast; gain=0.5f+e.intensity*0.45f; priority=3; a.duck=std::max(a.duck,0.7f); break;
         case EventKind::Ricochet: cue=Cue::Ricochet; gain=0.48f; priority=1; break;
         case EventKind::Destroyed: cue=Cue::Destroyed; gain=1; priority=5; a.duck=1; break;
@@ -135,7 +136,7 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
     if (audible && s.phase==Phase::Playing) {
         for (const auto& p : s.projectiles) {
             const float near=spatialGain(p.position,a.listener);
-            if (p.weapon==WeaponKind::GrowingOrb) {
+            if (p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet) {
                 auto& loop=a.loops[0]; const float charge=Cannon::orbCharge(p.age,c.weapon);
                 const float volume=(0.055f+charge*0.09f)*near;
                 if (volume>loop.target) { loop.target=volume; loop.sound->setPitch(0.8f+charge*0.48f); a.pan(*loop.sound,p.position); }
@@ -143,6 +144,11 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
                 auto& loop=a.loops[1]; const float volume=0.13f*near*std::clamp(p.velocity.y/240.f,0.f,1.f);
                 if (volume>loop.target) { loop.target=volume; loop.sound->setPitch(0.8f+std::clamp(p.velocity.y/600.f,0.f,0.8f)); a.pan(*loop.sound,p.position); }
             }
+        }
+        for (const auto& strike : s.skyStrikes) if (strike.age>=c.weapon.skyWarmup) {
+            auto& loop=a.loops[0];
+            const float volume=0.24f*spatialGain(strike.position,a.listener);
+            if (volume>loop.target) { loop.target=volume; loop.sound->setPitch(0.55f); a.pan(*loop.sound,strike.position); }
         }
         for (const auto& tank : s.tanks) if (tank.alive()) {
             if (tank.canFly && tank.position.y<c.groundHeight-c.hillHeight-c.tankHalfHeight-3) {

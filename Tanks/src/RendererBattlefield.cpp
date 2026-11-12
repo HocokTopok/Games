@@ -241,6 +241,17 @@ void Renderer::weaponPreview(WeaponKind kind,Vec2 center,float time) {
     t.titan=true; t.aim=-0.23f; t.track=time*0.25f;
     glow(center,76,kind==WeaponKind::Napalm || kind==WeaponKind::Mortar ? sf::Color{255,153,65} : sf::Color{120,176,255},22);
     tank(t,c,1.4f);
+    if (kind==WeaponKind::Ricochet) {
+        Projectile p; p.id=19; p.weapon=kind; p.position=center+Vec2{79,-10}; p.age=2.3f+0.3f*std::sin(time); p.velocity={400,-80};
+        weaponProjectile(p,c,{});
+    } else if (kind==WeaponKind::Flare) {
+        const Vec2 base=center+Vec2{78,14};
+        line(base-Vec2{0,53},base,{255,120,18,65},28);
+        line(base-Vec2{0,53},base,{255,199,56,180},15);
+        line(base-Vec2{0,53},base,{255,244,177},5);
+        glow(base,25,{255,162,38},90);
+        ring(base,18,{255,218,103,210},time,2*pi,0.24f);
+    }
 }
 void Renderer::mapPreview(std::uint8_t id,Vec2 p,Vec2 size) {
     const auto colors=palette(id); box(p,size,colors.sky,colors.edge);

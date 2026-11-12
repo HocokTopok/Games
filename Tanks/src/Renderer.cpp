@@ -84,7 +84,8 @@ void Renderer::observe(const Snapshot& state) {
     for (const auto& e : state.events) {
         if (e.id <= lastEvent_) continue;
         lastEvent_ = e.id;
-        if (e.kind==EventKind::SupplyLanded || e.kind==EventKind::Pickup) { bursts_.push_back({e.position,e.kind==EventKind::Pickup ? accent : sf::Color{219,188,114},0,0.7f,45}); continue; }
+        if (e.kind==EventKind::SupplyLanded || e.kind==EventKind::Pickup || e.kind==EventKind::FlareImpact) { bursts_.push_back({e.position,e.kind==EventKind::Pickup ? accent : (e.kind==EventKind::FlareImpact ? sf::Color{255,188,64} : sf::Color{219,188,114}),0,0.7f,45}); continue; }
+        if (e.kind==EventKind::SkyStrike) { bursts_.push_back({e.position,{255,211,93},0,0.7f,e.radius*1.5f}); shake_=std::max(shake_,7.f); continue; }
         if (e.kind==EventKind::MortarImpact || e.kind==EventKind::OrbImpact || e.kind==EventKind::Ricochet) { addWeaponEffect(e); continue; }
         const bool shot = e.kind == EventKind::Shot, death = e.kind == EventKind::Destroyed;
         const auto* owner = findTank(state, e.player);
@@ -94,6 +95,8 @@ void Renderer::observe(const Snapshot& state) {
         if (napalm) color = {255,133,42};
         if (shot && owner && owner->weapon==WeaponKind::Mortar) color={255,158,70};
         if (shot && owner && owner->weapon==WeaponKind::GrowingOrb) color={147,126,255};
+        if (shot && owner && owner->weapon==WeaponKind::Ricochet) color={147,126,255};
+        if (shot && owner && owner->weapon==WeaponKind::Flare) color={255,208,82};
         bursts_.push_back({e.position, color, 0, shot ? 0.17f : 0.85f, shot ? 27.f : (death ? 145.f : (napalm ? 40.f : 88.f))});
         if (!shot) shake_ = std::max(shake_, death ? 7.f : (napalm ? 0.8f : 3.5f));
         if (!settings.particles) continue;
@@ -174,6 +177,13 @@ void Renderer::tank(const Tank& t, const Config& c, float scale) {
         glow(barrelEnd,19*scale,{111,125,255},70+60*t.recoil);
         ring(barrelEnd,7*scale,{172,223,255,230},time_*3,pi*1.6f,0.65f,t.aim);
         circle(pivot,5*scale,{174,152,255});
+    } else if (t.weapon == WeaponKind::Flare) {
+        const auto normal=direction(t.aim+pi/2);
+        line(barrelStart,barrelEnd,{68,48,30},14*scale);
+        for (float side : {-1.f,1.f}) line(barrelStart+normal*(side*5*scale),barrelEnd+normal*(side*5*scale),{255,184,56},2*scale);
+        ring(barrelEnd,8*scale,{255,213,104,230},time_*2,2*pi,0.65f,t.aim);
+        glow(barrelEnd,24*scale,{255,162,32},65+120*t.recoil);
+        circle(pivot,5*scale,{255,209,90});
     } else if (t.weapon == WeaponKind::Napalm) {
         const auto normal = direction(t.aim + pi/2);
         for (int i = -1; i <= 1; ++i) {
@@ -278,7 +288,7 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
         auto& trail = trails_[p.id];
         if (trail.empty() || length(p.position - trail.back()) > 3) trail.push_back(p.position);
         if (trail.size() > 42) trail.erase(trail.begin());
-        if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet || p.weapon==WeaponKind::Napalm) { weaponProjectile(p,c,trail); continue; }
+        if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet || p.weapon==WeaponKind::Napalm || p.weapon==WeaponKind::Flare) { weaponProjectile(p,c,trail); continue; }
         const sf::Color color = p.napalm ? sf::Color{255,135,38} : accent;
         for (std::size_t i = 1; i < trail.size(); ++i) line(trail[i-1],trail[i],alpha(color,180.f * static_cast<float>(i) / trail.size()),p.napalm ? 3 : 2);
         circle(p.position,9,alpha(color,24)); circle(p.position,5,alpha(color,95)); circle(p.position,c.weapon.projectileRadius,p.napalm ? sf::Color{255,235,156} : white);
@@ -308,6 +318,7 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
         box(t.position + Vec2{-25,-49},{50,3},{33,47,60}); box(t.position + Vec2{-25,-49},{50 * t.healthRatio(),3},col);
         if (t.id == local) { text("YOU",t.position + Vec2{0,-80},17,col,true); line(t.position + Vec2{-3,-58},t.position + Vec2{0,-55},col); line(t.position + Vec2{0,-55},t.position + Vec2{3,-58},col); }
     }
+    skyStrikes(c,s);
     effects();
     if (cursor && s.phase == Phase::Playing) {
         circle(mouse,10,sf::Color::Transparent,alpha(white,130));

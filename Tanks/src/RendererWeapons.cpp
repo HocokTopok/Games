@@ -6,6 +6,10 @@ namespace tw {
 namespace {
 sf::Vector2f point(Vec2 v) { return {v.x,v.y}; }
 sf::Color fade(sf::Color c,float opacity) { c.a=static_cast<std::uint8_t>(std::clamp(opacity,0.f,255.f)); return c; }
+float variation(std::uint32_t seed, std::uint32_t salt) {
+    auto v=seed^(salt*0x9e3779b9u); v^=v>>16; v*=0x7feb352du; v^=v>>15; v*=0x846ca68bu; v^=v>>16;
+    return (v&0xffffu)/65535.f;
+}
 }
 void Renderer::glow(Vec2 position,float radius,sf::Color color,float opacity) {
     if (radius<0.1f || opacity<0.1f) return;
@@ -35,26 +39,23 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
         circle(p.position,3,{255,242,170});
         return;
     }
-    if (p.weapon==WeaponKind::Ricochet) {
-        const float radius=Cannon::radius(p,c.weapon);
-        const sf::Color color=p.bounces==0 ? sf::Color{89,195,255} : (p.bounces==1 ? sf::Color{167,131,255} : sf::Color{255,173,91});
-        for (std::size_t i=1;i<trail.size();++i) {
+    if (p.weapon==WeaponKind::Flare) {
+        for (std::size_t i=0;i<trail.size();++i) {
             const float t=static_cast<float>(i)/trail.size();
-            line(trail[i-1],trail[i],fade(color,t*t*180),radius*t);
+            circle(trail[i]+Vec2{std::sin(i*2.f+p.age*7)*5,-(1-t)*14},3+(1-t)*7,fade({99,89,79},t*80));
+            if (i>0) line(trail[i-1],trail[i],fade({255,145,32},t*t*230),2+t*5);
         }
-        glow(p.position,radius*6,color,85);
-        glow(p.position,radius*2,color,180);
-        const auto axis=direction(std::atan2(p.velocity.y,p.velocity.x));
-        line(p.position-axis*(radius*2),p.position+axis*radius,{225,245,255},radius);
-        circle(p.position,radius*0.6f,{255,255,246});
-        ring(p.position,radius*1.8f,fade(color,200),time_*5,pi*1.6f,0.7f);
-        for (unsigned i=p.bounces;i<2;++i) circle(p.position+Vec2{(static_cast<float>(i)*2-1)*4,-radius-9},1.7f,color);
+        glow(p.position,48,{255,94,17},100);
+        glow(p.position,22,{255,185,32},210);
+        flame(p.position,12,p.id);
+        circle(p.position,5,{255,250,181});
+        ring(p.position,10,{255,221,87,220},p.age*9,pi*1.5f,0.6f,p.age*3);
         return;
     }
-    const bool orb=p.weapon==WeaponKind::GrowingOrb;
+    const bool orb=p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet;
     const float charge=orb ? Cannon::orbCharge(p.age,c.weapon) : 0.f;
     const float radius=Cannon::radius(p,c.weapon);
-    const sf::Color color=orb ? sf::Color{146,119,255} : sf::Color{255,131,45};
+    const sf::Color color=orb ? (p.bounces<2 ? sf::Color{146,119,255} : sf::Color{255,163,98}) : sf::Color{255,131,45};
     sf::VertexArray ribbon(sf::PrimitiveType::Triangles);
     for (std::size_t i=1;i<trail.size();++i) {
         const float t=static_cast<float>(i)/static_cast<float>(trail.size());
@@ -65,9 +66,9 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
     }
     window_.draw(ribbon,sf::RenderStates(sf::BlendAdd));
     if (orb) {
-        glow(p.position,radius*3.8f,{116,82,255},40+charge*45);
+        glow(p.position,radius*3.8f,color,40+charge*45+p.bounces*12);
         glow(p.position,radius*2.1f,{88,202,255},100);
-        circle(p.position,radius,fade({67,51,146},200),fade({173,151,255},210));
+        circle(p.position,radius,fade({67,51,146},200),fade(color,210));
         sf::VertexArray corona(sf::PrimitiveType::LineStrip);
         for (int i=0;i<=80;++i) {
             const float a=i*2*pi/80;
@@ -75,8 +76,8 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
             corona.append({point(p.position+direction(a)*(radius*ripple)),{171,202,255,190}});
         }
         window_.draw(corona,sf::RenderStates(sf::BlendAdd));
-        ring(p.position,radius*1.3f,{174,129,255,185},time_*2.5f,pi*1.7f,0.43f,time_*0.9f+p.id);
-        ring(p.position,radius*1.18f,{111,237,255,210},-time_*3,pi*1.65f,0.55f,-time_*1.1f);
+        ring(p.position,radius*1.3f,{174,129,255,185},p.age*5,pi*1.7f,0.43f,p.age*1.8f+p.id);
+        ring(p.position,radius*1.18f,{111,237,255,210},-p.age*6,pi*1.65f,0.55f,-p.age*2.2f);
         glow(p.position,radius*0.95f,{110,225,255},210);
         glow(p.position+Vec2{-radius*0.15f,-radius*0.16f},radius*0.52f,{220,242,255},230);
         circle(p.position,radius*0.17f,{243,245,255,245});
@@ -86,8 +87,9 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
             glow(mote,4+charge*3,{148,196,255},180);
             circle(mote,1+charge,{220,235,255,235});
         }
-        // The two orbiting pips disappear as the two ricochets are spent.
-        for (unsigned i=p.bounces;i<2;++i) circle(p.position+Vec2{(static_cast<float>(i)*2-1)*5,-radius-11},1.8f,{207,191,255,210});
+        // Small pips show how many ricochets remain.
+        const unsigned limit=p.weapon==WeaponKind::Ricochet ? 3 : 2;
+        for (unsigned i=p.bounces;i<limit;++i) circle(p.position+Vec2{(static_cast<float>(i)*2-(limit-1))*5,-radius-11},1.8f,{207,191,255,210});
     } else {
         if (settings.particles) for (std::size_t i=0;i<trail.size();i+=5) {
             const float t=static_cast<float>(i)/static_cast<float>(trail.size());
@@ -106,9 +108,61 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
         circle(p.position+rotate({5,0},angle),2,{255,235,174});
     }
 }
+void Renderer::skyStrikes(const Config& c,const Snapshot& state) {
+    for (const auto& strike : state.skyStrikes) {
+        const float radius=strike.radius, age=strike.age, warmup=c.weapon.skyWarmup;
+        const auto base=strike.position;
+        if (age<warmup) {
+            const float t=age/warmup, pulse=0.65f+0.35f*std::sin(age*28);
+            glow(base,radius*1.7f,{255,141,24},45*t);
+            ring(base,radius*(1.2f-0.2f*t),fade({255,171,45},200*pulse),age*3,2*pi,0.27f);
+            ring(base,radius*0.62f,fade({255,224,113},220*t),-age*5,pi*1.6f,0.27f);
+            line(base-Vec2{radius,0},base+Vec2{radius,0},fade({255,193,62},150*t),2);
+            for (float y=15;y<base.y;y+=40) line({base.x,y},{base.x,y+15},fade({255,192,61},80*t),2);
+            continue;
+        }
+        const float active=age-warmup;
+        const float envelope=std::min(1.f,active/0.12f)*std::clamp((c.weapon.skyDuration-active)/0.45f,0.f,1.f);
+        const float pulse=0.94f+0.06f*std::sin(age*37+strike.id);
+        // Layers share the authoritative age and seed on Host and Join.
+        for (int layer=0;layer<4;++layer) {
+            const float width=radius*(layer==0 ? 1.5f : (layer==1 ? 1.f : (layer==2 ? 0.63f : 0.25f)))*envelope*pulse;
+            const sf::Color ink=layer==0 ? sf::Color{255,81,9} : (layer==1 ? sf::Color{255,136,15} : (layer==2 ? sf::Color{255,207,42} : sf::Color{255,249,183}));
+            const float opacity=(layer==0 ? 32.f : (layer==1 ? 75.f : (layer==2 ? 135.f : 230.f)))*envelope;
+            for (float side : {-1.f,1.f}) {
+                sf::VertexArray column(sf::PrimitiveType::TriangleStrip);
+                for (int i=0;i<=40;++i) {
+                    const float t=i/40.f, y=-30+(base.y+30)*t;
+                    const float ripple=1+0.06f*std::sin(y*0.04f-age*16+strike.id)+0.035f*std::sin(y*0.11f+age*23);
+                    column.append({{base.x,y},fade(ink,opacity)});
+                    column.append({{base.x+side*width*ripple,y},fade(ink,0)});
+                }
+                window_.draw(column,sf::RenderStates(sf::BlendAdd));
+            }
+        }
+        for (int i=0;i<12;++i) {
+            const float phase=variation(strike.id,i+20), x=base.x+(phase-0.5f)*radius*1.7f;
+            const float y=std::fmod(active*(530+phase*300)+phase*base.y,base.y+80)-40;
+            line({x,y},{x,std::min(base.y,y+35+phase*65)},fade({255,244,165},150*envelope),1.2f+phase*2);
+        }
+        const Vec2 source{base.x,25};
+        glow(source,radius*1.6f,{255,167,32},115*envelope);
+        ring(source,radius*0.85f,fade({255,227,115},150*envelope),age*2,2*pi,0.18f);
+        glow(base,radius*2.5f,{255,105,12},135*envelope);
+        glow(base,radius*1.3f,{255,209,58},220*envelope);
+        ring(base,radius*(1+0.08f*std::sin(age*9)),fade({255,193,53},220*envelope),age*4,2*pi,0.25f);
+        ring(base,radius*0.65f,fade({255,243,163},230*envelope),-age*6,2*pi,0.23f);
+        if (settings.particles) for (int i=0;i<20;++i) {
+            const float phase=variation(strike.id,i+50), rise=std::fmod(active*(95+phase*75)+phase*180,180.f);
+            const Vec2 p=base+Vec2{(phase-0.5f)*radius*2.6f+std::sin(rise*0.04f+i)*10,-rise};
+            glow(p,4+phase*4,{255,169,39},130*envelope*(1-rise/180));
+            circle(p,1+phase*1.8f,fade({255,228,114},230*envelope*(1-rise/180)));
+        }
+    }
+}
 void Renderer::addWeaponEffect(const GameEvent& e) {
     const bool mortar=e.kind==EventKind::MortarImpact, bounce=e.kind==EventKind::Ricochet;
-    weaponEffects_.push_back({e.position,e.kind,0,bounce ? 0.55f : (mortar ? 1.8f : 1.35f),e.radius,e.intensity,e.id});
+    weaponEffects_.push_back({e.position,e.kind,0,bounce ? 0.55f : (mortar ? 2.1f+0.4f*variation(e.id,71) : 1.35f),e.radius,e.intensity,e.id});
     shake_=std::max(shake_,bounce ? 1.4f : (mortar ? 5.2f : 2+3*e.intensity));
     if (!settings.particles) return;
     std::mt19937 random(e.id*977+31);
@@ -140,10 +194,15 @@ void Renderer::weaponEffects() {
         }
         if (mortar) {
             // Smoke rises behind the hot lobes while the fireball cools to embers.
-            for (int i=0;i<9;++i) {
-                const float a=i*2*pi/9+e.seed;
-                const Vec2 p=e.position+direction(a)*(radius*0.45f*expand)+Vec2{std::sin(t*5+i)*9,-t*radius*0.85f};
-                circle(p,radius*(0.17f+t*0.28f),fade({61,57,67},80*std::sin(pi*t)));
+            const int lobes=12+static_cast<int>(variation(e.seed,91)*7);
+            for (int i=0;i<lobes;++i) {
+                const float shape=variation(e.seed,i*5+1), drift=variation(e.seed,i*5+2);
+                const float a=i*2*pi/lobes+(shape-0.5f)*0.8f;
+                const Vec2 p=e.position+direction(a)*(radius*(0.18f+shape*0.4f)*expand)+Vec2{(drift-0.5f)*t*65,-t*radius*(0.5f+drift)};
+                const float size=radius*(0.12f+shape*0.14f+t*(0.16f+drift*0.2f));
+                const auto grey=static_cast<std::uint8_t>(57+shape*45);
+                circle(p,size,fade({grey,grey,static_cast<std::uint8_t>(grey+2)},155*std::pow(std::sin(pi*t),0.7f)));
+                glow(p+Vec2{0,size*0.3f},size,{255,128,48},50*std::max(0.f,1-e.age/0.8f));
             }
         }
         glow(e.position,radius*(1.8f+expand),color,100*std::pow(1-t,2));
@@ -153,12 +212,16 @@ void Renderer::weaponEffects() {
         const float hot=std::max(0.f,1-e.age/(mortar ? 0.95f : 0.7f));
         const float fireSize=radius*(0.18f+expand*0.55f)*hot;
         if (mortar) {
-            for (int i=0;i<12;++i) {
-                const float a=i*2*pi/12+e.seed;
-                const Vec2 p=e.position+direction(a)*(fireSize*(0.6f+0.15f*std::sin(i*4.f)));
-                glow(p,fireSize*0.8f,{255,94,22},110*hot);
-                circle(p,fireSize*(0.32f+0.08f*std::sin(e.age*18+i)),fade({255,119,36},190*hot));
-                if (i%2==0 && hot>0.1f) flame(p+Vec2{0,fireSize*0.15f},fireSize*0.4f,i+e.seed);
+            const int lobes=9+static_cast<int>(variation(e.seed,93)*7);
+            for (int i=0;i<lobes;++i) {
+                const float shape=variation(e.seed,i*7+3), speed=variation(e.seed,i*7+4);
+                const float a=i*2*pi/lobes+shape*0.5f;
+                const Vec2 p=e.position+direction(a)*(fireSize*(0.35f+shape*0.65f))+Vec2{0,-e.age*speed*40};
+                const float size=fireSize*(0.25f+shape*0.23f)*(1+0.12f*std::sin(e.age*(14+speed*12)+i));
+                glow(p,size*2.3f,{255,85,17},150*hot);
+                circle(p,size,fade({255,static_cast<std::uint8_t>(100+speed*70),31},210*hot));
+                glow(p-Vec2{size*0.2f,size*0.2f},size,{255,222,121},210*hot*hot);
+                if (i%2==0 && hot>0.1f) flame(p+Vec2{0,size*0.4f},size,i+e.seed);
             }
             glow(e.position,fireSize*1.3f,{255,209,105},220*hot);
         } else {

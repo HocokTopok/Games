@@ -37,7 +37,9 @@ Config Config::load(const std::filesystem::path& path) {
         {"mortar_damage", &c.weapon.mortarDamage}, {"orb_reload", &c.weapon.orbReload},
         {"ricochet_reload", &c.weapon.ricochetReload}, {"ricochet_speed_scale", &c.weapon.ricochetSpeedScale},
         {"orb_speed_scale", &c.weapon.orbSpeedScale}, {"orb_growth_seconds", &c.weapon.orbGrowthSeconds},
-        {"orb_initial_radius", &c.weapon.orbInitialRadius}, {"orb_max_radius", &c.weapon.orbMaxRadius}, {"orb_lifetime", &c.weapon.orbLifetime}
+        {"orb_initial_radius", &c.weapon.orbInitialRadius}, {"orb_max_radius", &c.weapon.orbMaxRadius}, {"orb_lifetime", &c.weapon.orbLifetime},
+        {"flare_reload", &c.weapon.flareReload}, {"flare_speed_scale", &c.weapon.flareSpeedScale}, {"flare_gravity_scale", &c.weapon.flareGravityScale},
+        {"sky_warmup", &c.weapon.skyWarmup}, {"sky_duration", &c.weapon.skyDuration}, {"sky_radius", &c.weapon.skyRadius}, {"sky_damage_per_second", &c.weapon.skyDamagePerSecond}
     };
     std::string line;
     unsigned lineNo = 0;
@@ -102,6 +104,8 @@ void Config::validate() const {
     require(weapon.ricochetReload >= 0.1f && weapon.ricochetReload <= 10 && weapon.ricochetSpeedScale >= 0.5f && weapon.ricochetSpeedScale <= 3, "ricochet gun");
     require(weapon.orbReload >= 0.1f && weapon.orbReload <= 10 && weapon.orbSpeedScale >= 0.1f && weapon.orbSpeedScale <= 2, "orb fire rate / speed");
     require(weapon.orbGrowthSeconds >= 0.5f && weapon.orbGrowthSeconds <= 20 && weapon.orbInitialRadius >= 2 && weapon.orbMaxRadius > weapon.orbInitialRadius && weapon.orbMaxRadius <= 60 && weapon.orbLifetime >= weapon.orbGrowthSeconds && weapon.orbLifetime <= 30, "orb growth");
+    require(weapon.flareReload >= 5 && weapon.flareReload <= 60 && weapon.flareSpeedScale >= 0.1f && weapon.flareSpeedScale <= 2 && weapon.flareGravityScale >= 0.1f && weapon.flareGravityScale <= 1, "flare ballistics / reload");
+    require(weapon.skyWarmup >= 0.1f && weapon.skyWarmup <= 5 && weapon.skyDuration >= 1 && weapon.skyDuration <= 10 && weapon.skyRadius >= 20 && weapon.skyRadius <= 200 && weapon.skyDamagePerSecond > 0 && weapon.skyDamagePerSecond <= 500, "sky strike");
     require(jumpSpeed >= 50 && jumpSpeed <= 1000 && flightSpeed >= jumpSpeed && flightSpeed <= 1200 && flightAcceleration > 0 && flightAcceleration <= 6000 && descentSpeed >= 50 && descentSpeed <= 1500, "flight");
     require(weapon.directDamage >= 0 && weapon.directDamage <= 200 && weapon.splashDamage >= 0 && weapon.splashDamage <= 200, "damage");
     require(weapon.blastRadius >= 10 && weapon.blastRadius <= 400 && weapon.projectileRadius >= 1 && weapon.projectileRadius <= 10, "blast / projectile radius");

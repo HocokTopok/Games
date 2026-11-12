@@ -19,6 +19,8 @@ private:
     void explode(const Hit& hit, bool laser = false, float damageScale = 1);
     void ignite(const Hit& hit, PlayerId owner, float damageScale);
     void updateFire(float dt);
+    void summonSkyStrike(const Hit& hit, const Projectile& projectile);
+    void updateSkyStrikes(float dt);
     void detonate(const Hit& hit, const Projectile& projectile);
     void updateSupplies(float dt);
     Config config_;
@@ -28,6 +30,7 @@ private:
     std::vector<GameEvent> events_;
     std::vector<LaserBeam> lasers_;
     std::vector<FirePatch> fires_;
+    std::vector<SkyStrike> skyStrikes_;
     std::vector<SupplyDrop> supplies_;
     SupplyPlane plane_;
     float supplyTimer_{30};

@@ -82,10 +82,10 @@ FlightResult advance(Projectile& p, float dt, const Config& c, const Terrain& ma
     FlightResult result;
     const bool orb=p.weapon==WeaponKind::GrowingOrb;
     const bool ricochet=p.weapon==WeaponKind::Ricochet;
-    const float gravity=orb ? 0.f : (p.weapon==WeaponKind::Mortar ? c.gravity*c.weapon.mortarGravityScale : c.gravity);
+    const float gravity=orb ? 0.f : c.gravity*(p.weapon==WeaponKind::Mortar ? c.weapon.mortarGravityScale : (p.weapon==WeaponKind::Flare ? c.weapon.flareGravityScale : 1.f));
     const float lifetime=Cannon::lifetime(p,c.weapon);
     float remaining=std::min(dt,std::max(0.f,lifetime-p.age));
-    for (int segment=0;segment<3 && remaining>0.000001f;++segment) {
+    for (int segment=0;segment<4 && remaining>0.000001f;++segment) {
         auto next=p; integrate(next,remaining,gravity);
         const float radius=Cannon::radius(next,c.weapon);
         const auto hit=sweep(p.position,next.position,radius,map,tanks,next.age<0.12f ? p.owner : noPlayer,c.tankHalfWidth,c.tankHalfHeight);
@@ -103,13 +103,27 @@ FlightResult advance(Projectile& p, float dt, const Config& c, const Terrain& ma
         }
         if (hit && hit->fraction<=wallFraction) {
             integrate(p,remaining*hit->fraction,gravity); p.position=hit->position;
+            if (ricochet && hit->tank==noPlayer && p.bounces<3) {
+                const float slope=map.slope(p.position.x);
+                const Vec2 normal{std::sin(slope),-std::cos(slope)};
+                const float incoming=dot(p.velocity,normal);
+                if (incoming<0) p.velocity=p.velocity-normal*(2*incoming);
+                p.velocity=p.velocity*0.5f; ++p.bounces;
+                // Clear the enlarged sphere from the slope before consuming the
+                // rest of the step; otherwise one landing can spend all bounces.
+                const float clearance=Cannon::radius(p,c.weapon)+0.15f;
+                p.position.y=std::min(p.position.y,map.height(p.position.x)-clearance);
+                result.ricochets[result.ricochetCount++]=p.position;
+                remaining*=1-hit->fraction;
+                continue;
+            }
             result.hit=hit; return result;
         }
         if (wallFraction<=1) {
             integrate(p,remaining*wallFraction,gravity);
             p.position.x=std::clamp(p.position.x,radius,c.worldWidth-radius);
             p.position.y=std::max(radius,p.position.y);
-            if (p.bounces>=2) { result.hit=Hit{wallFraction,p.position,noPlayer}; return result; }
+            if (p.bounces>=(ricochet ? 3 : 2)) { result.hit=Hit{wallFraction,p.position,noPlayer}; return result; }
             if (reflectX) p.velocity.x=-p.velocity.x;
             if (reflectY) p.velocity.y=-p.velocity.y;
             p.velocity=p.velocity*0.5f; ++p.bounces;

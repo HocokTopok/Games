@@ -58,7 +58,8 @@ void run() {
     require(a.latest().players.size()==1,"rematch lobby cleaned");
 }
 void runLoadouts() {
-    tw::Config config; config.titanMode=true; config.titanHealth=1250; config.hillHeight=0;
+    // Leave room for the faster mortar shell to land inside the fixture.
+    tw::Config config; config.titanMode=true; config.titanHealth=1250; config.hillHeight=0; config.worldWidth=2200;
     config.weapon.mortarBlastRadius=72; config.flightSpeed=375; config.weapon.orbGrowthSeconds=4;
     tw::net::Server server(config,0);
     tw::net::Client a,b;
