@@ -110,12 +110,12 @@ void run() {
     require(d.position.x>=800 && d.position.x<=2400,"authoritative supply drop range");
     std::cout<<"Host/Join pixel parity passed; live napalm, mortar, craters and supply cycle synchronized. Screenshot: "<<output<<'\n';
 }
-void ricochetAndRailgun() {
+void ricochetAndMissile() {
     tw::Config c; c.loadoutSelection=true; c.titanMode=true;
     tw::net::Server server(c,0); tw::net::Client a,b;
     require(a.connect("127.0.0.1",server.port(),"HOST") && b.connect("127.0.0.1",server.port(),"JOIN"),"second pair connects");
     until(a,b,[&]{return a.welcomed() && b.welcomed();});
-    a.weapon(tw::WeaponKind::Ricochet); b.weapon(tw::WeaponKind::Laser); a.ready(true); b.ready(true);
+    a.weapon(tw::WeaponKind::Ricochet); b.weapon(tw::WeaponKind::Missile); a.ready(true); b.ready(true);
     until(a,b,[&]{return a.latest().players.size()==2 && a.latest().players[0].ready && a.latest().players[1].ready;});
     a.map(0); until(a,b,[&]{return a.latest().phase==tw::Phase::Playing && b.latest().phase==tw::Phase::Playing;});
     sf::RenderTexture hostImage({1280,720}), joinImage({1280,720});
@@ -124,18 +124,18 @@ void ricochetAndRailgun() {
     bool projectile=false,beam=false,bounce=false,parity=false; const auto start=std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now()<start+4s) {
         a.sendInput({0,-tw::pi+0.12f,0,true}); b.sendInput({0,-2.8f,0,true}); a.poll(); b.poll();
-        require(a.connected() && b.connected(),"ricochet and railgun clients connected");
+        require(a.connected() && b.connected(),"ricochet and missile clients connected");
         for (const auto& p : b.latest().projectiles) if (p.weapon==tw::WeaponKind::Ricochet) { projectile=true; bounce|=p.bounces>0; }
-        beam|=!a.latest().lasers.empty() && !b.latest().lasers.empty();
+        beam|=std::ranges::any_of(b.latest().projectiles,[](const auto& p){return p.weapon==tw::WeaponKind::Missile;});
         if (!parity && bounce && beam && a.latest().tick==b.latest().tick) {
             sameFrame(hostRenderer,joinRenderer,hostImage,joinImage,a.config(),a.latest(),b.latest()); parity=true;
         }
         std::this_thread::sleep_for(4ms);
     }
-    require(projectile && beam && bounce && parity,"new ricochet projectile, wall bounce and rail beam reach both clients");
+    require(projectile && beam && bounce && parity,"new ricochet projectile, wall bounce and guided missile reach both clients");
 }
 }
 int main() {
-    try { run(); ricochetAndRailgun(); return 0; }
+    try { run(); ricochetAndMissile(); return 0; }
     catch (const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; }
 }

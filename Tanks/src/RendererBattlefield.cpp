@@ -237,11 +237,17 @@ void Renderer::supplies(const Config& c,const Snapshot& s) {
     (void)c;
 }
 void Renderer::weaponPreview(WeaponKind kind,Vec2 center,float time) {
-    Config c; Tank t; t.position=center; t.weapon=kind; t.color=kind==WeaponKind::Laser ? 4 : 0;
+    Config c; Tank t; t.position=center; t.weapon=kind; t.color=(kind==WeaponKind::Laser || kind==WeaponKind::Missile) ? 4 : 0;
     t.titan=true; t.aim=-0.23f; t.track=time*0.25f;
     glow(center,76,kind==WeaponKind::Napalm || kind==WeaponKind::Mortar ? sf::Color{255,153,65} : sf::Color{120,176,255},22);
     tank(t,c,1.4f);
-    if (kind==WeaponKind::Ricochet) {
+    if (kind==WeaponKind::Missile) {
+        const Vec2 end=center+Vec2{111,-33};
+        line(center+Vec2{46,-27},end,{255,61,39,190},1.2f);
+        glow(end,9,{255,45,25},90); circle(end,2,{255,161,125});
+        Projectile p; p.id=21; p.weapon=kind; p.position=center+Vec2{80,7}; p.velocity={500,-75}; p.age=time;
+        weaponProjectile(p,c,{});
+    } else if (kind==WeaponKind::Ricochet) {
         Projectile p; p.id=19; p.weapon=kind; p.position=center+Vec2{79,-10}; p.age=2.3f+0.3f*std::sin(time); p.velocity={400,-80};
         weaponProjectile(p,c,{});
     } else if (kind==WeaponKind::Flare) {

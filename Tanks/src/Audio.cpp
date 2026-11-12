@@ -118,9 +118,10 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
         Cue cue=Cue::Impact; float gain=0.65f; unsigned priority=2;
         switch (e.kind) {
         case EventKind::Shot:
-            cue=owner && (owner->weapon==WeaponKind::Mortar || owner->weapon==WeaponKind::Flare) ? Cue::MortarShot :
+            cue=owner && (owner->weapon==WeaponKind::Mortar || owner->weapon==WeaponKind::Flare || owner->weapon==WeaponKind::Missile) ? Cue::MortarShot :
                 (owner && (owner->weapon==WeaponKind::GrowingOrb || owner->weapon==WeaponKind::Ricochet) ? Cue::OrbShot : (owner && owner->weapon==WeaponKind::Laser ? Cue::LaserShot : Cue::CannonShot));
             gain=0.58f; break;
+        case EventKind::MissileImpact:
         case EventKind::MortarImpact: cue=Cue::MortarBlast; gain=0.95f; priority=4; a.duck=1; break;
         case EventKind::SkyStrike: cue=Cue::MortarBlast; gain=1; priority=4; a.duck=1; break;
         case EventKind::OrbImpact: cue=Cue::OrbBlast; gain=0.5f+e.intensity*0.45f; priority=3; a.duck=std::max(a.duck,0.7f); break;

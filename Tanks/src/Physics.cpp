@@ -63,8 +63,8 @@ std::optional<Hit> sweep(Vec2 a, Vec2 b, float radius, const Terrain& map,
     return hit;
 }
 std::vector<Vec2> trajectory(const Tank& tank, const Config& c, const Terrain& map, std::span<const Tank> tanks) {
-    if (tank.weapon == WeaponKind::Laser) {
-        const auto laser = laserTrace(tank,c,map,tanks);
+    if (tank.weapon == WeaponKind::Laser || tank.weapon == WeaponKind::Missile) {
+        const auto laser = tank.weapon == WeaponKind::Missile ? guidanceTrace(tank,c,map,tanks) : laserTrace(tank,c,map,tanks);
         return {laser.from,laser.to};
     }
     auto p = Cannon::fire(tank, c.weapon, 0);
@@ -82,7 +82,11 @@ FlightResult advance(Projectile& p, float dt, const Config& c, const Terrain& ma
     FlightResult result;
     const bool orb=p.weapon==WeaponKind::GrowingOrb;
     const bool ricochet=p.weapon==WeaponKind::Ricochet;
-    const float gravity=orb ? 0.f : c.gravity*(p.weapon==WeaponKind::Mortar ? c.weapon.mortarGravityScale : (p.weapon==WeaponKind::Flare ? c.weapon.flareGravityScale : 1.f));
+    if (p.weapon==WeaponKind::Missile) {
+        const auto owner=std::ranges::find(tanks,p.owner,&Tank::id);
+        if (owner!=tanks.end() && owner->alive()) steerMissile(p,guidanceTrace(*owner,c,map,tanks).to,dt,c.weapon.missileTurnRate);
+    }
+    const float gravity=(orb || p.weapon==WeaponKind::Missile) ? 0.f : c.gravity*(p.weapon==WeaponKind::Mortar ? c.weapon.mortarGravityScale : (p.weapon==WeaponKind::Flare ? c.weapon.flareGravityScale : 1.f));
     const float lifetime=Cannon::lifetime(p,c.weapon);
     float remaining=std::min(dt,std::max(0.f,lifetime-p.age));
     for (int segment=0;segment<4 && remaining>0.000001f;++segment) {
@@ -148,8 +152,9 @@ float splashDamage(Vec2 explosion, const Tank& tank, const WeaponSpec& w) {
     const float distance = std::max(0.f, length(explosion - tank.position) - 17.f);
     return w.splashDamage * std::clamp(1.f - distance / w.blastRadius, 0.f, 1.f);
 }
-LaserTrace laserTrace(const Tank& tank, const Config& c, const Terrain& map, std::span<const Tank> tanks) {
-    const Vec2 from = tank.muzzle(c.weapon.barrelLength), ray = direction(tank.aim);
+namespace {
+LaserTrace trace(const Tank& tank, const Config& c, const Terrain& map, std::span<const Tank> tanks, bool pointer) {
+    const Vec2 from = tank.muzzle(c.weapon.barrelLength) + (pointer ? direction(tank.aim+pi/2)*-7.f : Vec2{}), ray = direction(tank.aim);
     float reach = 2 * (c.worldWidth + c.worldHeight);
     const auto bound = [&](float value, float component, float low, float high) {
         if (component > 0.00001f) reach = std::min(reach,std::max(0.f,(high-value)/component));
@@ -158,9 +163,24 @@ LaserTrace laserTrace(const Tank& tank, const Config& c, const Terrain& map, std
     bound(from.x,ray.x,-20,c.worldWidth+20);
     bound(from.y,ray.y,-80,c.worldHeight);
     auto end = from + ray * reach;
-    auto hit = sweep(from,end,c.weapon.projectileRadius,map,tanks,tank.id,c.tankHalfWidth,c.tankHalfHeight);
+    auto hit = sweep(from,end,pointer ? 0.75f : c.weapon.projectileRadius,map,tanks,tank.id,c.tankHalfWidth,c.tankHalfHeight);
     if (hit) end = hit->position;
     return {from,end,hit};
+}
+}
+LaserTrace laserTrace(const Tank& tank, const Config& c, const Terrain& map, std::span<const Tank> tanks) { return trace(tank,c,map,tanks,false); }
+LaserTrace guidanceTrace(const Tank& tank, const Config& c, const Terrain& map, std::span<const Tank> tanks) { return trace(tank,c,map,tanks,true); }
+void steerMissile(Projectile& p, Vec2 target, float dt, float turnRate) {
+    const Vec2 delta=target-p.position;
+    if (length(delta)<0.01f) return;
+    const float angle=std::atan2(p.velocity.y,p.velocity.x);
+    const float heading=approachAngle(angle,std::atan2(delta.y,delta.x),turnRate*dt);
+    p.velocity=direction(heading)*length(p.velocity);
+}
+float missileDamage(Vec2 explosion, const Tank& tank, bool direct, const Config& c) {
+    if (direct) return c.weapon.missileDamage;
+    const float falloff=areaDamage(explosion,tank,c.weapon.missileBlastRadius,1,c);
+    return falloff>0 ? 1+(c.weapon.missileDamage-1)*falloff : 0;
 }
 void damage(Tank& tank, float amount, bool lethal) {
     if (!tank.alive() || tank.shieldRemaining > 0) return;

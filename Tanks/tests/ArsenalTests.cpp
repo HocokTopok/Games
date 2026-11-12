@@ -88,7 +88,7 @@ void napalmLifetime() {
 void pendingStrikeVictory(bool draw) {
     tw::Config c; c.titanMode=true; c.hillHeight=0;
     tw::GameSession game(c); game.addPlayer("HOST"); game.addPlayer("JOIN");
-    game.setWeapon(0,tw::WeaponKind::Flare); game.setWeapon(1,tw::WeaponKind::Laser);
+    game.setWeapon(0,tw::WeaponKind::Flare); game.setWeapon(1,tw::WeaponKind::Missile);
     game.setReady(0,true); game.setReady(1,true); game.step();
     auto& owner=const_cast<tw::Tank&>(game.world().tanks()[0]); owner.aim=tw::pi/2;
     if (draw) owner.hp=200;

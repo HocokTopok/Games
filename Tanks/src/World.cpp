@@ -93,6 +93,21 @@ void World::detonate(const Hit& hit, const Projectile& p) {
         if (!tank.alive()) emit(EventKind::Destroyed,tank.position,tank.id);
     }
 }
+void World::detonateMissile(const Hit& hit, const Projectile& p) {
+    Vec2 normal;
+    if (hit.tank==noPlayer) {
+        const float slope=map_->slope(hit.position.x); normal={std::sin(slope),-std::cos(slope)};
+    } else {
+        const float speed=length(p.velocity); normal=speed>0 ? p.velocity*(-1.f/speed) : Vec2{0,-1};
+    }
+    emit(EventKind::MissileImpact,hit.position,p.owner,config_.weapon.missileBlastRadius);
+    events_.back().normal=normal;
+    for (auto& tank : tanks_) {
+        if (!tank.alive()) continue;
+        Physics::damage(tank,Physics::missileDamage(hit.position,tank,tank.id==hit.tank,config_)*p.damageScale);
+        if (!tank.alive()) emit(EventKind::Destroyed,tank.position,tank.id);
+    }
+}
 void World::updateFire(float dt) {
     for (auto& fire : fires_) fire.remaining -= dt;
     std::erase_if(fires_, [](const auto& fire) { return fire.remaining <= 0; });
@@ -237,7 +252,8 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         const auto result=Physics::advance(p,dt,config_,*map_,tanks_);
         for (unsigned i=0;i<result.ricochetCount;++i) emit(EventKind::Ricochet,result.ricochets[i],p.owner,Cannon::radius(p,config_.weapon),p.weapon==WeaponKind::Ricochet ? Cannon::ricochetDamage(p.bounces)/100.f : Cannon::orbDamage(p.age,config_.weapon)/100.f);
         if (result.hit) {
-            if (p.weapon==WeaponKind::Flare) summonSkyStrike(*result.hit,p);
+            if (p.weapon==WeaponKind::Missile) detonateMissile(*result.hit,p);
+            else if (p.weapon==WeaponKind::Flare) summonSkyStrike(*result.hit,p);
             else if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet) detonate(*result.hit,p);
             else if (p.napalm) ignite(*result.hit, p.owner,p.damageScale); else explode(*result.hit,false,p.damageScale);
             return true;

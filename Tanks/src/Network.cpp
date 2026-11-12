@@ -19,7 +19,7 @@ enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, 
 constexpr std::uint32_t magic = 0x54414e4b;
 constexpr std::uint32_t extensionMagic = 0x54575831;
 constexpr std::uint16_t extensionVersion = 2;
-constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2, battlefieldCapability = 4, skyCapability = 8;
+constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2, battlefieldCapability = 4, skyCapability = 8, missileCapability = 16;
 constexpr std::uint32_t weaponMagic = 0x41525731;
 constexpr std::uint16_t weaponVersion = 1;
 constexpr std::uint32_t healthMagic = 0x48505731;
@@ -28,6 +28,8 @@ constexpr std::uint32_t battlefieldMagic=0x42465731;
 constexpr std::uint16_t battlefieldVersion=1;
 constexpr std::uint32_t skyMagic=0x534b5931;
 constexpr std::uint16_t skyVersion=1;
+constexpr std::uint32_t missileMagic=0x4d535731;
+constexpr std::uint16_t missileVersion=1;
 constexpr std::size_t maxFrame = 65536, maxQueued = 262144;
 
 sf::Packet packet(Message type) { sf::Packet p; p << static_cast<std::uint8_t>(type); return p; }
@@ -99,6 +101,12 @@ void readSkyConfig(sf::Packet& p, WeaponSpec& w) {
     p >> w.flareReload >> w.flareSpeedScale >> w.flareGravityScale
       >> w.skyWarmup >> w.skyDuration >> w.skyRadius >> w.skyDamagePerSecond;
 }
+void writeMissileConfig(sf::Packet& p, const WeaponSpec& w) {
+    p << missileMagic << missileVersion << w.missileReload << w.missileSpeedScale << w.missileTurnRate << w.missileBlastRadius << w.missileDamage;
+}
+void readMissileConfig(sf::Packet& p, WeaponSpec& w) {
+    p >> w.missileReload >> w.missileSpeedScale >> w.missileTurnRate >> w.missileBlastRadius >> w.missileDamage;
+}
 EventKind legacyKind(EventKind kind) { return kind>=EventKind::MortarImpact ? EventKind::Impact : kind; }
 void writeState(sf::Packet& p, const Snapshot& s, bool nativeHealth) {
     p << s.tick << s.round << static_cast<std::uint8_t>(s.phase) << s.winner << s.elapsed;
@@ -145,6 +153,8 @@ void writeState(sf::Packet& p, const Snapshot& s, bool nativeHealth) {
     p << s.plane.active << s.plane.position << s.plane.targetX << s.plane.released;
     p << skyMagic << skyVersion << static_cast<std::uint8_t>(s.skyStrikes.size());
     for (const auto& strike : s.skyStrikes) p << strike.id << strike.owner << strike.position << strike.age << strike.radius << strike.damageScale;
+    p << missileMagic << missileVersion << static_cast<std::uint16_t>(s.events.size());
+    for (const auto& event : s.events) p << event.normal;
 }
 bool readState(sf::Packet& p, Snapshot& s) {
     std::uint8_t phase{}, count{};
@@ -256,17 +266,17 @@ bool readState(sf::Packet& p, Snapshot& s) {
             s.detailedWeapons=true;
             for (auto& tank : s.tanks) {
                 std::uint8_t kind{}; p >> kind;
-                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Flare)) return false;
+                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Missile)) return false;
                 tank.weapon=static_cast<WeaponKind>(kind);
             }
             for (auto& projectile : s.projectiles) {
                 std::uint8_t kind{}; p >> kind >> projectile.bounces;
-                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Flare) || projectile.bounces>3) return false;
+                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Missile) || projectile.bounces>3) return false;
                 projectile.weapon=static_cast<WeaponKind>(kind);
             }
             for (auto& event : s.events) {
                 std::uint8_t kind{}; p >> kind >> event.radius >> event.intensity;
-                if (!p || kind>static_cast<std::uint8_t>(EventKind::SkyStrike) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
+                if (!p || kind>static_cast<std::uint8_t>(EventKind::MissileImpact) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
                     !std::isfinite(event.intensity) || event.intensity<0 || event.intensity>1) return false;
                 event.kind=static_cast<EventKind>(kind);
             }
@@ -276,7 +286,7 @@ bool readState(sf::Packet& p, Snapshot& s) {
             if (!p || s.mapId>3) return false;
             for (auto& player : s.players) {
                 std::uint8_t kind{}; p >> kind >> player.weaponChosen;
-                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Flare)) return false;
+                if (!p || kind>static_cast<std::uint8_t>(WeaponKind::Missile)) return false;
                 player.weapon=static_cast<WeaponKind>(kind);
             }
             for (auto& tank : s.tanks) {
@@ -306,6 +316,12 @@ bool readState(sf::Packet& p, Snapshot& s) {
                 p >> strike.id >> strike.owner >> strike.position >> strike.age >> strike.radius >> strike.damageScale;
                 if (!p || strike.owner>=maxPlayers || !finite(strike.position) || !std::isfinite(strike.age) || strike.age<0 || strike.age>15 ||
                     !std::isfinite(strike.radius) || strike.radius<20 || strike.radius>200 || (strike.damageScale!=1 && strike.damageScale!=1.5f)) return false;
+            }
+        } else if (marker==missileMagic && version==missileVersion) {
+            p >> n; if (!p || n!=s.events.size()) return false;
+            for (auto& event : s.events) {
+                p >> event.normal;
+                if (!p || !finite(event.normal) || std::abs(length(event.normal)-1.f)>0.01f) return false;
             }
         } else break;
     }
@@ -374,7 +390,7 @@ struct Server::Impl {
     struct Peer {
         Channel channel;
         PlayerId id{noPlayer};
-        bool nativeHealth{}, battlefield{}, sky{};
+        bool nativeHealth{}, battlefield{}, sky{}, missile{};
         Clock::time_point lastInput{Clock::now()};
     };
     std::vector<std::unique_ptr<Peer>> peers;
@@ -402,9 +418,10 @@ struct Server::Impl {
                 peer.nativeHealth = marker == capabilityMagic && (capabilities & healthCapability) != 0;
                 peer.battlefield = marker == capabilityMagic && (capabilities & battlefieldCapability) != 0;
                 peer.sky = marker == capabilityMagic && (capabilities & skyCapability) != 0;
+                peer.missile = marker == capabilityMagic && (capabilities & missileCapability) != 0;
             }
-            if (config.loadoutSelection && (!peer.battlefield || !peer.sky)) {
-                auto error=packet(Message::Error); error << std::string("Update both games to Tank Wars 1.4.0 or newer for solar flares and three ricochets.");
+            if (config.loadoutSelection && (!peer.battlefield || !peer.sky || !peer.missile)) {
+                auto error=packet(Message::Error); error << std::string("Update both games to Tank Wars 1.5.0 or newer for guided missiles and the new battlefields.");
                 peer.channel.queue(std::move(error)); peer.channel.flush(); peer.channel.alive=false; return;
             }
             for (char& ch : name) if (ch < 32 || ch > 126) ch = '?';
@@ -423,6 +440,7 @@ struct Server::Impl {
             writeWeaponConfig(welcome,config.weapon);
             writeBattlefieldConfig(welcome,config);
             writeSkyConfig(welcome,config.weapon);
+            writeMissileConfig(welcome,config.weapon);
             peer.channel.queue(std::move(welcome));
             return;
         }
@@ -520,7 +538,7 @@ bool Client::connect(const std::string& address, unsigned short port, const std:
     }
     channel->socket->setBlocking(false); impl_->channel = std::move(channel);
     auto hello = packet(Message::Hello);
-    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability|battlefieldCapability|skyCapability);
+    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability|battlefieldCapability|skyCapability|missileCapability);
     impl_->queue(std::move(hello));
     return true;
 }
@@ -536,6 +554,7 @@ void Client::poll() {
         if (type == static_cast<std::uint8_t>(Message::Welcome)) {
             p >> impl_->id;
             valid = impl_->id < maxPlayers && readConfig(p, impl_->config);
+            bool missileConfig=false;
             if (valid && !p.endOfPacket()) {
                 std::uint32_t marker{}; std::uint16_t version{};
                 p >> marker >> version;
@@ -559,11 +578,16 @@ void Client::poll() {
                             p >> impl_->config.loadoutSelection >> impl_->config.mapId >> impl_->config.weapon.ricochetReload >> impl_->config.weapon.ricochetSpeedScale;
                         } else if (marker==skyMagic && version==skyVersion) {
                             readSkyConfig(p,impl_->config.weapon);
+                        } else if (marker==missileMagic && version==missileVersion) {
+                            readMissileConfig(p,impl_->config.weapon); missileConfig=static_cast<bool>(p);
                         } else break;
                     }
                     valid = static_cast<bool>(p);
                     if (valid) try { impl_->config.validate(); } catch (...) { valid = false; }
                 }
+            }
+            if (valid && impl_->config.loadoutSelection && !missileConfig) {
+                impl_->error="Update the host to Tank Wars 1.5.0 or newer for guided missiles."; valid=false;
             }
         } else if (type == static_cast<std::uint8_t>(Message::State) && impl_->id != noPlayer) {
             Snapshot s; valid = readState(p, s);

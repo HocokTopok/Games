@@ -49,7 +49,7 @@ Input GameSession::botInput(const Tank& tank) const {
         if (!target || length(other.position - tank.position) < length(target->position - tank.position)) target = &other;
     }
     if (!target) return {0, tank.aim, 0, false};
-    if (tank.weapon == WeaponKind::Laser) {
+    if (tank.weapon == WeaponKind::Laser || tank.weapon == WeaponKind::Missile) {
         const auto delta = target->pivot() - tank.pivot();
         const float aim = std::atan2(delta.y,delta.x);
         return {0,aim,0,std::abs(angleDelta(tank.aim,aim)) < 0.02f};

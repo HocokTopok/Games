@@ -6,7 +6,7 @@ const char* MapFactory::name(std::uint8_t id) {
     return names[std::min<unsigned>(id,3)];
 }
 const char* MapFactory::description(std::uint8_t id) {
-    constexpr const char* descriptions[]{"01 / 1600 m / dunes & desert wind", "02 / 2200 m / rolling forest hills", "03 / 2600 m / twin peaks & muddy lowland", "04 / 3200 m / ruins, ridges & ash"};
+    constexpr const char* descriptions[]{"01 / 1600 m / dunes & desert wind", "02 / 2200 m / three towering peaks", "03 / 2600 m / deep jagged ravine", "04 / 3200 m / steep urban ridges"};
     return descriptions[std::min<unsigned>(id,3)];
 }
 Config MapFactory::preset(Config c, std::uint8_t id) {
@@ -28,12 +28,25 @@ NightfallBasin::NightfallBasin(const Config& config, std::span<const float> surf
 }
 float NightfallBasin::originalHeight(float x) const {
     const float u=x/config_.worldWidth, t=u*2*pi, h=config_.hillHeight;
-    if (config_.mapId==1) return config_.groundHeight-h*(0.55f+0.30f*std::cos(t*3)+0.15f*std::cos(t*7));
-    if (config_.mapId==2) {
-        const auto mountain=[&](float center) { const float d=(u-center)/0.13f; return std::exp(-d*d); };
-        return config_.groundHeight-h*(mountain(0.17f)+mountain(0.83f))+h*0.045f*std::cos(t*9);
+    const float height=config_.worldHeight;
+    const auto peak=[&](float center,float width) { const float d=(u-center)/width; return std::exp(-d*d); };
+    if (config_.mapId==1) {
+        // Two peaks on the left, the tallest at 43%; a slightly lower giant on the right.
+        return height*(0.82f-0.34f*peak(0.21f,0.095f)-0.55f*peak(0.43f,0.105f)-0.48f*peak(0.78f,0.125f)
+                       +0.008f*std::sin(t*9)*std::sin(pi*u));
     }
-    if (config_.mapId==3) return config_.groundHeight-h*(0.45f+0.25f*std::cos(t*2)+0.20f*std::cos(t*5)+0.10f*std::cos(t*9));
+    if (config_.mapId==2) {
+        const float sides=2*u-1, envelope=4*u*(1-u);
+        const float rough=envelope*(0.021f*std::sin(t*7+0.4f)+0.012f*std::sin(t*13+1.3f)+0.008f*std::sin(t*23));
+        return height*(0.88f-0.65f*sides*sides+rough);
+    }
+    if (config_.mapId==3) {
+        // Unequal widths and heights create short, steep cover rather than rolling waves.
+        return height*(0.81f-0.22f*peak(0.12f,0.040f)-0.34f*peak(0.27f,0.052f)
+                       -0.20f*peak(0.39f,0.030f)-0.39f*peak(0.53f,0.050f)
+                       -0.26f*peak(0.66f,0.034f)-0.32f*peak(0.79f,0.048f)-0.18f*peak(0.91f,0.030f)
+                       +0.012f*std::sin(t*17));
+    }
     return config_.groundHeight+h*(0.7f*std::cos(t)+0.3f*std::cos(3*t));
 }
 float NightfallBasin::height(float x) const {
@@ -41,7 +54,10 @@ float NightfallBasin::height(float x) const {
     const auto i=static_cast<std::size_t>(f), j=std::min(i+1,heights_.size()-1);
     return heights_[i]+(heights_[j]-heights_[i])*(f-i);
 }
-float NightfallBasin::bedrock(float x) const { return config_.groundHeight+config_.hillHeight+32+5*std::cos(x/config_.worldWidth*4*pi); }
+float NightfallBasin::bedrock(float x) const {
+    const float base=config_.groundHeight+config_.hillHeight+32+5*std::cos(x/config_.worldWidth*4*pi);
+    return config_.mapId==2 ? std::max(base,config_.worldHeight*0.965f) : base;
+}
 void NightfallBasin::crater(Vec2 center, float radius, float depth) {
     const float gap=std::max(0.f,height(center.x)-center.y);
     if (gap>=radius) return;
@@ -55,8 +71,13 @@ void NightfallBasin::crater(Vec2 center, float radius, float depth) {
     }
     // Repeated impacts erode the rim into ramps instead of leaving vertical steps.
     const float maxStep=config_.worldWidth/(heights_.size()-1);
-    for (std::size_t i=1;i<heights_.size();++i) heights_[i]=std::max(heights_[i],heights_[i-1]-maxStep);
-    for (std::size_t i=heights_.size()-1;i>0;--i) heights_[i-1]=std::max(heights_[i-1],heights_[i]-maxStep);
+    std::vector<float> original(heights_.size());
+    for (std::size_t i=0;i<original.size();++i) original[i]=originalHeight(i*maxStep);
+    // Smooth only the erosion depth, so a crater cannot flatten an existing mountain.
+    for (std::size_t i=1;i<heights_.size();++i)
+        heights_[i]=std::min(bedrock(i*maxStep),std::max(heights_[i],original[i]+heights_[i-1]-original[i-1]-maxStep));
+    for (std::size_t i=heights_.size()-1;i>0;--i)
+        heights_[i-1]=std::min(bedrock((i-1)*maxStep),std::max(heights_[i-1],original[i-1]+heights_[i]-original[i]-maxStep));
 }
 float NightfallBasin::movementScale(float x) const {
     const float u=x/config_.worldWidth;

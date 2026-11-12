@@ -35,6 +35,8 @@ Config Config::load(const std::filesystem::path& path) {
         {"mortar_reload", &c.weapon.mortarReload}, {"mortar_speed_scale", &c.weapon.mortarSpeedScale},
         {"mortar_gravity_scale", &c.weapon.mortarGravityScale}, {"mortar_blast_radius", &c.weapon.mortarBlastRadius},
         {"mortar_damage", &c.weapon.mortarDamage}, {"orb_reload", &c.weapon.orbReload},
+        {"missile_reload", &c.weapon.missileReload}, {"missile_speed_scale", &c.weapon.missileSpeedScale},
+        {"missile_turn_rate", &c.weapon.missileTurnRate}, {"missile_blast_radius", &c.weapon.missileBlastRadius}, {"missile_damage", &c.weapon.missileDamage},
         {"ricochet_reload", &c.weapon.ricochetReload}, {"ricochet_speed_scale", &c.weapon.ricochetSpeedScale},
         {"orb_speed_scale", &c.weapon.orbSpeedScale}, {"orb_growth_seconds", &c.weapon.orbGrowthSeconds},
         {"orb_initial_radius", &c.weapon.orbInitialRadius}, {"orb_max_radius", &c.weapon.orbMaxRadius}, {"orb_lifetime", &c.weapon.orbLifetime},
@@ -101,6 +103,8 @@ void Config::validate() const {
     require(weapon.mortarReload >= 0.1f && weapon.mortarReload <= 10 && weapon.mortarSpeedScale >= 0.1f && weapon.mortarSpeedScale <= 1 && weapon.mortarGravityScale >= 0.05f && weapon.mortarGravityScale <= 1, "mortar ballistics");
     require(weapon.mortarBlastRadius >= 20 && weapon.mortarBlastRadius <= 200 && weapon.mortarDamage >= 1 && weapon.mortarDamage <= 200, "mortar explosion");
     require(mapId < 4, "map ID");
+    require(weapon.missileReload >= 0.1f && weapon.missileReload <= 30 && weapon.missileSpeedScale >= 0.1f && weapon.missileSpeedScale <= 3 && weapon.missileTurnRate >= 0.1f && weapon.missileTurnRate <= 5, "missile flight / reload");
+    require(weapon.missileBlastRadius >= 10 && weapon.missileBlastRadius <= 200 && weapon.missileDamage >= 1 && weapon.missileDamage <= 500, "missile damage");
     require(weapon.ricochetReload >= 0.1f && weapon.ricochetReload <= 10 && weapon.ricochetSpeedScale >= 0.5f && weapon.ricochetSpeedScale <= 3, "ricochet gun");
     require(weapon.orbReload >= 0.1f && weapon.orbReload <= 10 && weapon.orbSpeedScale >= 0.1f && weapon.orbSpeedScale <= 2, "orb fire rate / speed");
     require(weapon.orbGrowthSeconds >= 0.5f && weapon.orbGrowthSeconds <= 20 && weapon.orbInitialRadius >= 2 && weapon.orbMaxRadius > weapon.orbInitialRadius && weapon.orbMaxRadius <= 60 && weapon.orbLifetime >= weapon.orbGrowthSeconds && weapon.orbLifetime <= 30, "orb growth");

@@ -27,6 +27,29 @@ void Renderer::ring(Vec2 position,float radius,sf::Color color,float start,float
     window_.draw(vertices,sf::RenderStates(sf::BlendAdd));
 }
 void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::vector<Vec2>& trail) {
+    if (p.weapon==WeaponKind::Missile) {
+        const float angle=std::atan2(p.velocity.y,p.velocity.x);
+        const Vec2 ray=direction(angle), normal=direction(angle+pi/2), tail=p.position-ray*11;
+        if (settings.particles) for (std::size_t i=0;i<trail.size();++i) {
+            const float t=static_cast<float>(i+1)/trail.size();
+            const Vec2 smoke=trail[i]+Vec2{std::sin(i*1.7f+p.id)*3,-(1-t)*12};
+            circle(smoke,3+(1-t)*9,fade({111,114,123},t*(1-t)*240));
+            if (i>0) line(trail[i-1],trail[i],fade({255,147,61},t*t*125),1+t*2);
+        }
+        const float flicker=0.85f+0.15f*std::sin(p.age*87+p.id);
+        glow(tail,27,{255,89,22},100);
+        line(tail,tail-ray*(27*flicker),{255,91,20,95},10);
+        line(tail,tail-ray*(21*flicker),{255,177,67,220},4);
+        line(tail,tail-ray*(10*flicker),{255,244,191},2);
+        sf::ConvexShape hull(5);
+        const std::array<Vec2,5> shape{{{-11,-3.5f},{6,-3.5f},{15,0},{6,3.5f},{-11,3.5f}}};
+        for (std::size_t i=0;i<shape.size();++i) hull.setPoint(i,point(p.position+rotate(shape[i],angle)));
+        hull.setFillColor({166,179,184}); hull.setOutlineColor({231,228,206}); hull.setOutlineThickness(0.8f); window_.draw(hull);
+        for (float side : {-1.f,1.f}) line(p.position-ray*9+normal*(side*7),p.position-ray*3+normal*(side*2),{194,113,69},2.5f);
+        line(p.position-ray*3,p.position+ray*5,{244,96,65},3);
+        glow(p.position+ray*10,5,{255,66,35},100);
+        return;
+    }
     if (p.weapon==WeaponKind::Napalm) {
         for (std::size_t i=1;i<trail.size();++i) {
             const float t=static_cast<float>(i)/trail.size();
@@ -162,25 +185,27 @@ void Renderer::skyStrikes(const Config& c,const Snapshot& state) {
 }
 void Renderer::addWeaponEffect(const GameEvent& e) {
     const bool mortar=e.kind==EventKind::MortarImpact, bounce=e.kind==EventKind::Ricochet;
-    weaponEffects_.push_back({e.position,e.kind,0,bounce ? 0.55f : (mortar ? 2.1f+0.4f*variation(e.id,71) : 1.35f),e.radius,e.intensity,e.id});
+    weaponEffects_.push_back({e.position,e.kind,0,bounce ? 0.55f : (mortar ? 2.1f+0.4f*variation(e.id,71) : 1.35f),e.radius,e.intensity,e.id,e.normal});
     shake_=std::max(shake_,bounce ? 1.4f : (mortar ? 5.2f : 2+3*e.intensity));
     if (!settings.particles) return;
     std::mt19937 random(e.id*977+31);
     std::uniform_real_distribution<float> unit(0,1);
-    const int count=bounce ? 22 : (mortar ? 84 : 52);
+    const bool missile=e.kind==EventKind::MissileImpact;
+    const int count=missile ? 100 : (bounce ? 22 : (mortar ? 84 : 52));
     for (int i=0;i<count;++i) {
-        const float angle=unit(random)*2*pi;
+        const float angle=missile ? std::atan2(e.normal.y,e.normal.x)+(unit(random)-0.5f)*2.2f : unit(random)*2*pi;
         const float speed=(bounce ? 50 : 70)+unit(random)*(bounce ? 170 : 280);
         const float life=0.3f+unit(random)*(mortar ? 1.1f : 0.7f);
-        const sf::Color color=mortar ? (i%3 ? sf::Color{255,155,64} : sf::Color{255,223,139}) : (i%2 ? sf::Color{163,125,255} : sf::Color{132,226,255});
+        const sf::Color color=(mortar || missile) ? (i%3 ? sf::Color{255,155,64} : sf::Color{255,223,139}) : (i%2 ? sf::Color{163,125,255} : sf::Color{132,226,255});
         particles_.push_back({e.position,direction(angle)*speed+Vec2{0,mortar ? -60.f : -15.f},color,life,life,1+unit(random)*2.5f});
     }
 }
 void Renderer::weaponEffects() {
     for (const auto& e : weaponEffects_) {
         const float t=e.age/e.duration;
+        const bool missile=e.kind==EventKind::MissileImpact;
         const bool mortar=e.kind==EventKind::MortarImpact, bounce=e.kind==EventKind::Ricochet;
-        const sf::Color color=mortar ? sf::Color{255,137,49} : sf::Color{156,130,255};
+        const sf::Color color=(mortar || missile) ? sf::Color{255,137,49} : sf::Color{156,130,255};
         const float radius=std::max(10.f,e.radius);
         const float expand=1-std::exp(-t*9);
         if (bounce) {
@@ -190,6 +215,25 @@ void Renderer::weaponEffects() {
                 const auto ray=direction(i*2*pi/8+e.seed);
                 line(e.position+ray*(radius*t),e.position+ray*(radius*(0.5f+t*2)),fade(color,(1-t)*180),2*(1-t));
             }
+            continue;
+        }
+        if (e.kind==EventKind::MissileImpact) {
+            const float axis=std::atan2(e.normal.y,e.normal.x), hot=std::max(0.f,1-e.age/0.65f);
+            glow(e.position,radius*(1+expand*1.6f),{255,105,28},170*(1-t)*(1-t));
+            ring(e.position,radius*(0.2f+expand*1.1f),fade({255,191,99},210*(1-t)),0,2*pi,0.28f,axis+pi/2);
+            for (int i=0;i<22;++i) {
+                const float v=variation(e.seed,i+120), spread=variation(e.seed,i+170);
+                const Vec2 out=direction(axis+(v-0.5f)*2.35f);
+                const Vec2 at=e.position+out*(radius*expand*(0.35f+spread*1.45f))+e.normal*(e.age*28);
+                const float size=radius*(0.09f+spread*0.15f+t*0.16f);
+                const auto grey=static_cast<std::uint8_t>(62+v*43);
+                circle(at,size,fade({grey,grey,static_cast<std::uint8_t>(grey+5)},145*std::sin(pi*t)));
+                glow(at,size*2,{255,86,17},160*hot);
+                circle(at,size*hot,fade({255,static_cast<std::uint8_t>(121+spread*79),43},205*hot));
+                glow(at-e.normal*(size*0.2f),size*0.75f,{255,232,158},190*hot*hot);
+                if (i%3==0) line(e.position+out*(radius*expand*0.25f),at+out*(20*hot),fade({255,211,136},230*hot),2*hot+0.5f);
+            }
+            glow(e.position+e.normal*(radius*expand*0.4f),radius*0.8f,{255,230,155},230*hot*hot);
             continue;
         }
         if (mortar) {

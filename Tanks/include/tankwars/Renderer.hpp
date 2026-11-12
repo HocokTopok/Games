@@ -51,7 +51,7 @@ private:
     struct Particle { Vec2 position, velocity; sf::Color color; float life, total, size; };
     struct Burst { Vec2 position; sf::Color color; float age{}, duration{}, radius{}; };
     struct BeamEffect { Vec2 from, to; sf::Color color; float age{}; };
-    struct WeaponEffect { Vec2 position; EventKind kind; float age{}, duration{}, radius{}, intensity{}; std::uint32_t seed{}; };
+    struct WeaponEffect { Vec2 position; EventKind kind; float age{}, duration{}, radius{}, intensity{}; std::uint32_t seed{}; Vec2 normal{0,-1}; };
     std::vector<Particle> particles_;
     std::vector<Burst> bursts_;
     std::vector<BeamEffect> beams_;

@@ -22,6 +22,7 @@ private:
     void summonSkyStrike(const Hit& hit, const Projectile& projectile);
     void updateSkyStrikes(float dt);
     void detonate(const Hit& hit, const Projectile& projectile);
+    void detonateMissile(const Hit& hit, const Projectile& projectile);
     void updateSupplies(float dt);
     Config config_;
     std::unique_ptr<Terrain> map_;

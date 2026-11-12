@@ -17,6 +17,9 @@ std::vector<Vec2> trajectory(const Tank& tank, const Config& config, const Terra
 float splashDamage(Vec2 explosion, const Tank& tank, const WeaponSpec& weapon);
 struct LaserTrace { Vec2 from, to; std::optional<Hit> hit; };
 LaserTrace laserTrace(const Tank& tank, const Config& config, const Terrain& map, std::span<const Tank> tanks);
+LaserTrace guidanceTrace(const Tank& tank, const Config& config, const Terrain& map, std::span<const Tank> tanks);
+void steerMissile(Projectile& projectile, Vec2 target, float dt, float turnRate);
+float missileDamage(Vec2 explosion, const Tank& tank, bool direct, const Config& config);
 void damage(Tank& tank, float amount, bool lethal = false);
 void crush(Tank& tank);
 }

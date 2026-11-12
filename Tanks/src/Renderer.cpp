@@ -86,7 +86,7 @@ void Renderer::observe(const Snapshot& state) {
         lastEvent_ = e.id;
         if (e.kind==EventKind::SupplyLanded || e.kind==EventKind::Pickup || e.kind==EventKind::FlareImpact) { bursts_.push_back({e.position,e.kind==EventKind::Pickup ? accent : (e.kind==EventKind::FlareImpact ? sf::Color{255,188,64} : sf::Color{219,188,114}),0,0.7f,45}); continue; }
         if (e.kind==EventKind::SkyStrike) { bursts_.push_back({e.position,{255,211,93},0,0.7f,e.radius*1.5f}); shake_=std::max(shake_,7.f); continue; }
-        if (e.kind==EventKind::MortarImpact || e.kind==EventKind::OrbImpact || e.kind==EventKind::Ricochet) { addWeaponEffect(e); continue; }
+        if (e.kind==EventKind::MortarImpact || e.kind==EventKind::OrbImpact || e.kind==EventKind::Ricochet || e.kind==EventKind::MissileImpact) { addWeaponEffect(e); continue; }
         const bool shot = e.kind == EventKind::Shot, death = e.kind == EventKind::Destroyed;
         const auto* owner = findTank(state, e.player);
         const bool napalm = e.kind == EventKind::NapalmImpact || (shot && owner && owner->weapon == WeaponKind::Napalm);
@@ -94,6 +94,7 @@ void Renderer::observe(const Snapshot& state) {
         if (const auto* t = findTank(state, e.player)) color = playerColor(t->color);
         if (napalm) color = {255,133,42};
         if (shot && owner && owner->weapon==WeaponKind::Mortar) color={255,158,70};
+        if (shot && owner && owner->weapon==WeaponKind::Missile) color={255,104,48};
         if (shot && owner && owner->weapon==WeaponKind::GrowingOrb) color={147,126,255};
         if (shot && owner && owner->weapon==WeaponKind::Ricochet) color={147,126,255};
         if (shot && owner && owner->weapon==WeaponKind::Flare) color={255,208,82};
@@ -160,6 +161,17 @@ void Renderer::tank(const Tank& t, const Config& c, float scale) {
         line(barrelEnd-normal*(9*scale),barrelEnd+normal*(9*scale),{241,182,122},4*scale);
         glow(barrelEnd,14*scale,{255,128,48},45+40*t.recoil);
         circle(pivot,6*scale,{255,172,82});
+    } else if (t.weapon == WeaponKind::Missile) {
+        const auto ray=direction(t.aim), normal=direction(t.aim+pi/2);
+        line(barrelStart,barrelEnd,{43,55,65},15*scale);
+        for (float side : {-1.f,1.f}) line(barrelStart+normal*(side*5*scale),barrelEnd+normal*(side*5*scale),{194,177,135},2*scale);
+        // Compact red designator physically mounted above the launch tube.
+        const Vec2 emitter=barrelEnd-normal*(7*scale);
+        line(emitter-ray*(13*scale),emitter,{27,36,46},5*scale);
+        circle(emitter,2.4f*scale,{255,66,54});
+        glow(emitter,9*scale,{255,36,24},75);
+        line(barrelEnd-normal*(8*scale),barrelEnd+normal*(8*scale),{211,205,178},3*scale);
+        circle(pivot,5*scale,{231,125,76});
     } else if (t.weapon == WeaponKind::Ricochet) {
         const auto normal=direction(t.aim+pi/2);
         for (float side : {-1.f,1.f}) {
@@ -266,7 +278,16 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
             flame({x,map->height(x) - 2}, size, static_cast<float>(fire.id) + dx);
         }
     }
-    if (const auto* t = findTank(s,local); t && t->alive() && s.phase == Phase::Playing && settings.trajectory) {
+    for (const auto& t : s.tanks) {
+        if (!t.alive() || t.weapon!=WeaponKind::Missile || !std::ranges::any_of(s.projectiles,[&](const auto& p) { return p.weapon==WeaponKind::Missile && p.owner==t.id; })) continue;
+        const auto pointer=Physics::guidanceTrace(t,c,*map,s.tanks);
+        line(pointer.from,pointer.to,{255,29,21,35},5);
+        line(pointer.from,pointer.to,{255,55,42,170},1.2f);
+        glow(pointer.to,14,{255,39,25},95);
+        circle(pointer.to,2.5f,{255,175,134});
+        ring(pointer.to,6,{255,65,43,190},time_*3,2*pi,0.6f);
+    }
+    if (const auto* t = findTank(s,local); t && t->alive() && s.phase == Phase::Playing && settings.trajectory && t->weapon!=WeaponKind::Missile) {
         const auto points = Physics::trajectory(*t,c,*map,s.tanks);
         sf::VertexArray dots(sf::PrimitiveType::Points);
         float distance = 0;
@@ -288,7 +309,7 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
         auto& trail = trails_[p.id];
         if (trail.empty() || length(p.position - trail.back()) > 3) trail.push_back(p.position);
         if (trail.size() > 42) trail.erase(trail.begin());
-        if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet || p.weapon==WeaponKind::Napalm || p.weapon==WeaponKind::Flare) { weaponProjectile(p,c,trail); continue; }
+        if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet || p.weapon==WeaponKind::Napalm || p.weapon==WeaponKind::Flare || p.weapon==WeaponKind::Missile) { weaponProjectile(p,c,trail); continue; }
         const sf::Color color = p.napalm ? sf::Color{255,135,38} : accent;
         for (std::size_t i = 1; i < trail.size(); ++i) line(trail[i-1],trail[i],alpha(color,180.f * static_cast<float>(i) / trail.size()),p.napalm ? 3 : 2);
         circle(p.position,9,alpha(color,24)); circle(p.position,5,alpha(color,95)); circle(p.position,c.weapon.projectileRadius,p.napalm ? sf::Color{255,235,156} : white);
@@ -380,8 +401,9 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool netw
     text(tank && tank->canFly ? "DOWN   DESCEND     SPACE   FIRE" : "MOUSE   AIM     HOLD SPACE   FIRE",{42,839},17,muted);
     text("ESC  /  MENU",{1430,839},18,muted,true);
     text(tank && tank->canFly ? "LAND ON RIVAL / LETHAL" : MapFactory::name(c.mapId),{1430,812},15,muted,true);
-    if (tank && tank->weapon==WeaponKind::Ricochet) text("2 WALL BOUNCES / DMG 20 > 30 > 40",{800,875},14,{109,211,255},true);
+    if (tank && tank->weapon==WeaponKind::Ricochet) text("3 BOUNCES / DMG 30 > 40 > 50 > 60",{800,875},14,{109,211,255},true);
     if (tank && tank->weapon==WeaponKind::GrowingOrb) text("2 RICOCHETS / DMG 1-100",{800,875},14,{177,155,255},true);
+    if (tank && tank->weapon==WeaponKind::Missile) text("HOLD LASER ON TARGET / LIMITED TURN / 120 DMG",{800,875},14,{255,147,109},true);
     if (tank && tank->weapon==WeaponKind::Mortar) text("HIGH ARC / AREA BLAST",{800,875},14,{255,174,103},true);
     if (tank && !tank->alive() && s.phase == Phase::Playing) text("TANK DESTROYED / SPECTATING",{800,690},26,white,true);
 }

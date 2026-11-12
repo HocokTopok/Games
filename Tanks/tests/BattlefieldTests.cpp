@@ -43,13 +43,15 @@ void maps() {
         require(near(map->height(x),map->bedrock(x)),"repeated impacts reach unbreakable layer");
         for (float xx=1;xx<c.worldWidth;xx+=2) {
             require(map->height(xx)<=map->bedrock(xx)+0.01f,"erosion stays above bedrock");
-            require(std::abs(map->height(xx+2)-map->height(xx))<=2.01f,"repeated craters keep traversable rims");
+            const auto original=tw::MapFactory::create(c);
+            const float natural=std::abs(original->height(xx+2)-original->height(xx));
+            require(std::abs(map->height(xx+2)-map->height(xx))<=natural+2.01f,"crater rims preserve existing mountain steepness");
         }
         const auto copy=tw::MapFactory::create(c,map->samples());
         for (float xx=0;xx<c.worldWidth;xx+=13) require(near(map->height(xx),copy->height(xx),0.001f),"snapshot reconstructs exact surface");
         if (id==2) {
             auto original=tw::MapFactory::create(c);
-            require(original->height(c.worldWidth*0.17f)<original->height(x)-150,"twin peaks flank the low plateau");
+            require(original->height(0)<original->height(x)-700 && original->height(c.worldWidth)<original->height(x)-700,"high edges flank the deep ravine");
             bool mud=false,firm=false;
             for (float xx=c.worldWidth*0.3f;xx<c.worldWidth*0.7f;xx+=10) { mud|=original->movementScale(xx)<1; firm|=original->movementScale(xx)==1; }
             require(mud && firm && original->movementScale(100)==1,"marsh contains mud and firm hummocks");

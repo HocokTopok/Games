@@ -36,15 +36,16 @@ struct Input {
     float lift{};
 };
 enum class Phase : std::uint8_t { Lobby, Playing, Victory };
-enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike };
+enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike, MissileImpact };
 // GrowingOrb is retained only for the legacy preset/protocol; the menu has one ricochet weapon.
-enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb, Ricochet, Flare };
+enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb, Ricochet, Flare, Missile };
 struct GameEvent {
     std::uint32_t id{};
     EventKind kind{};
     Vec2 position{};
     PlayerId player{noPlayer};
     float radius{}, intensity{1};
+    Vec2 normal{0,-1};
 };
 struct Player {
     PlayerId id{};
