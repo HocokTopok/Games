@@ -37,7 +37,10 @@ private:
     Renderer renderer_;
     SoundSystem audio_;
     Controls controls_;
+    sf::Vector2i pointerPixel_{}, pressPixel_{}, releasePixel_{};
     Screen screen_{Screen::Main}, settingsReturn_{Screen::Main};
+    PlayerId draggedPlayer_{noPlayer};
+    bool released_{};
     bool paused_{}, clicked_{}, autoReadySent_{}, showFps_{};
     float accumulator_{}, inputTimer_{}, wheelTime_{}, wheelDirection_{}, time_{}, fps_{};
     float viewportWidth_{}, viewportHeight_{};

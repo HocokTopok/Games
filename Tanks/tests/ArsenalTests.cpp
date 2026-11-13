@@ -111,9 +111,9 @@ void mortarDirectHit() {
     target.canFly=true; target.position.y=shooter.pivot().y-43;
     std::array<tw::Input,tw::maxPlayers> input{}; input[0]={0,-0.6f,0,true}; world.step(input); input[0].fire=false;
     for (int i=0;i<20 && target.hp==1000;++i) world.step(input);
-    require(near(target.hp,900),"a direct mortar hit deals exactly one hundred damage");
+    require(near(target.hp,850),"a direct mortar hit deals exactly 150 damage");
     const auto state=world.snapshot();
-    require(std::ranges::any_of(state.events,[](const auto& e){return e.kind==tw::EventKind::MortarImpact && e.radius==78;}),"larger mortar blast radius reaches the renderer");
+    require(std::ranges::any_of(state.events,[](const auto& e){return e.kind==tw::EventKind::MortarImpact && e.radius==110;}),"larger mortar blast radius reaches the renderer");
 }
 }
 int main() {

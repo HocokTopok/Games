@@ -184,8 +184,8 @@ void Renderer::skyStrikes(const Config& c,const Snapshot& state) {
     }
 }
 void Renderer::addWeaponEffect(const GameEvent& e) {
-    const bool mortar=e.kind==EventKind::MortarImpact, bounce=e.kind==EventKind::Ricochet;
-    weaponEffects_.push_back({e.position,e.kind,0,bounce ? 0.55f : (mortar ? 2.1f+0.4f*variation(e.id,71) : 1.35f),e.radius,e.intensity,e.id,e.normal});
+    const bool mortar=e.kind==EventKind::MortarImpact || e.kind==EventKind::PlaneCrash, bounce=e.kind==EventKind::Ricochet;
+    weaponEffects_.push_back({e.position,e.kind,0,bounce ? 0.55f : (mortar ? 3.1f+0.4f*variation(e.id,71) : 1.35f),e.radius,e.intensity,e.id,e.normal});
     shake_=std::max(shake_,bounce ? 1.4f : (mortar ? 5.2f : 2+3*e.intensity));
     if (!settings.particles) return;
     std::mt19937 random(e.id*977+31);
@@ -204,7 +204,7 @@ void Renderer::weaponEffects() {
     for (const auto& e : weaponEffects_) {
         const float t=e.age/e.duration;
         const bool missile=e.kind==EventKind::MissileImpact;
-        const bool mortar=e.kind==EventKind::MortarImpact, bounce=e.kind==EventKind::Ricochet;
+        const bool mortar=e.kind==EventKind::MortarImpact || e.kind==EventKind::PlaneCrash, bounce=e.kind==EventKind::Ricochet;
         const sf::Color color=(mortar || missile) ? sf::Color{255,137,49} : sf::Color{156,130,255};
         const float radius=std::max(10.f,e.radius);
         const float expand=1-std::exp(-t*9);
@@ -237,17 +237,29 @@ void Renderer::weaponEffects() {
             continue;
         }
         if (mortar) {
-            // Smoke rises behind the hot lobes while the fireball cools to embers.
-            const int lobes=12+static_cast<int>(variation(e.seed,91)*7);
-            for (int i=0;i<lobes;++i) {
-                const float shape=variation(e.seed,i*5+1), drift=variation(e.seed,i*5+2);
-                const float a=i*2*pi/lobes+(shape-0.5f)*0.8f;
-                const Vec2 p=e.position+direction(a)*(radius*(0.18f+shape*0.4f)*expand)+Vec2{(drift-0.5f)*t*65,-t*radius*(0.5f+drift)};
-                const float size=radius*(0.12f+shape*0.14f+t*(0.16f+drift*0.2f));
-                const auto grey=static_cast<std::uint8_t>(57+shape*45);
-                circle(p,size,fade({grey,grey,static_cast<std::uint8_t>(grey+2)},155*std::pow(std::sin(pi*t),0.7f)));
-                glow(p+Vec2{0,size*0.3f},size,{255,128,48},50*std::max(0.f,1-e.age/0.8f));
+            const float rise=radius*(0.15f+0.95f*(1-std::exp(-e.age*1.6f)));
+            const float growth=1-std::exp(-e.age*5), fadeOut=std::clamp((1-t)*4.f,0.f,1.f);
+            const float heat=std::max(0.f,1-e.age/1.25f);
+            // Layered opaque lobes, rolling outward around a rising central column.
+            for (int i=0;i<42;++i) {
+                const float v=variation(e.seed,i+310), q=variation(e.seed,i+360);
+                const bool cap=i>=15;
+                const float a=(i-15)*2.39996f;
+                const float spread=radius*(0.25f+0.60f*growth)*std::sqrt(q);
+                const Vec2 at=e.position+(cap ? Vec2{std::cos(a)*spread,-rise+std::sin(a)*spread*0.32f} : Vec2{(v-0.5f)*radius*0.27f,-rise*(i/15.f)});
+                const float size=radius*(cap ? 0.20f+0.12f*v : 0.12f+0.08f*v)*(0.4f+0.6f*growth);
+                const auto grey=static_cast<std::uint8_t>(46+v*38);
+                circle(at,size,fade({grey,static_cast<std::uint8_t>(grey-4),static_cast<std::uint8_t>(grey-7)},255*fadeOut));
+                const float ember=heat*(0.6f+0.4f*std::sin(e.age*10+i));
+                circle(at+Vec2{0,size*0.22f},size*0.78f,fade({255,static_cast<std::uint8_t>(85+v*100),24},235*ember*fadeOut));
+                glow(at,size*1.7f,{255,92,19},70*ember*fadeOut);
             }
+            const float shock=std::clamp(e.age/0.7f,0.f,1.f);
+            ring(e.position,radius*(0.1f+shock*1.5f),fade({255,206,130},230*(1-shock)),0,2*pi,0.24f);
+            glow(e.position,radius*1.8f,{255,144,51},120*heat);
+            const float flash=std::max(0.f,1-e.age/0.16f);
+            circle(e.position,radius*0.40f*flash,fade({255,245,206},255*flash));
+            continue;
         }
         glow(e.position,radius*(1.8f+expand),color,100*std::pow(1-t,2));
         const float shock=std::clamp(e.age/0.6f,0.f,1.f);

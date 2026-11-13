@@ -76,6 +76,8 @@ void Renderer::decorations(const Config& c,const Terrain& map,float time) {
             for (int j=0;j<3;++j) { const float a=x+j*9-14; line({a,y},{a-3,y-20-j*5.f},{109,117,73},1.3f); circle({a-3,y-21-j*5.f},2,{82,81,50}); }
         } else if (c.mapId==3) {
             const float w=50+(i*19)%54, h=size+35;
+            if (map.height(x)<c.worldHeight*0.71f || std::abs(map.height(x-w/2)-map.height(x+w/2))>14 ||
+                std::abs(map.slope(x))>0.20f) continue;
             polygon({{x-w/2,y},{x-w/2,y-h},{x-w/4,y-h+14},{x,y-h-8},{x+w/5,y-h+24},{x+w/2,y-h+6},{x+w/2,y}},colors.distant);
             for (float yy=y-h+30;yy<y-12;yy+=25) for (float xx=x-w/2+9;xx<x+w/2-7;xx+=20) {
                 box({xx,yy},{8,12},{30,34,39,210});
@@ -189,23 +191,32 @@ void Renderer::perkIcon(PickupKind kind,Vec2 p,float size,sf::Color color,float 
 void Renderer::supplies(const Config& c,const Snapshot& s) {
     if (s.plane.active) {
         const auto p=s.plane.position;
+        const auto at=[&](Vec2 v) { v.x*=s.plane.direction; return p+rotate(v,s.plane.direction*s.plane.angle); };
         const auto polygon=[&](std::initializer_list<Vec2> points,sf::Color color) {
             sf::ConvexShape shape(points.size()); std::size_t i=0;
-            for (auto v : points) shape.setPoint(i++,point(p+v));
+            for (auto v : points) shape.setPoint(i++,point(at(v)));
             shape.setFillColor(color); shape.setOutlineColor({145,162,139}); shape.setOutlineThickness(1); window_.draw(shape);
         };
-        line(p+Vec2{-130,3},p+Vec2{-40,3},{190,203,193,35},3);
+        line(at({-130,3}),at({-40,3}),{190,203,193,35},3);
         polygon({{-51,0},{-32,-8},{25,-8},{46,-2},{51,3},{36,9},{-33,8}}, {69,85,76});
         polygon({{-9,-5},{-23,-37},{-10,-39},{17,-6}}, {85,102,86});
         polygon({{-9,6},{-24,35},{-9,37},{19,6}}, {60,75,66});
         polygon({{-42,-3},{-53,-21},{-44,-22},{-28,-3}}, {92,105,87});
-        box(p+Vec2{23,-7},{10,8},{160,195,194});
-        for (float dx : {-4.f,12.f}) circle(p+Vec2{dx,13},5,{25,34,35});
+        polygon({{23,-7},{33,-7},{33,1},{23,1}},{160,195,194});
+        for (float dx : {-4.f,12.f}) circle(at({dx,13}),5,{25,34,35});
         const float spin=std::sin(time_*55)*22;
-        line(p+Vec2{48,-spin},p+Vec2{48,spin},{206,217,191,170},3);
-        line(p+Vec2{-33,1},p+Vec2{17,1},{164,173,140},2);
-        circle(p+Vec2{2,-22},4,{180,193,163}, {54,70,64});
-        glow(p+Vec2{-47,-2},8,{255,99,66},85);
+        line(at({48,-spin}),at({48,spin}),{206,217,191,170},3);
+        line(at({-33,1}),at({17,1}),{164,173,140},2);
+        circle(at({2,-22}),4,{180,193,163}, {54,70,64});
+        glow(at({-47,-2}),8,{255,99,66},85);
+        box(p+Vec2{-35,-57},{70,4},{24,31,34});
+        box(p+Vec2{-35,-57},{70*s.plane.hp/200,4},s.plane.crashing ? sf::Color{255,101,48} : sf::Color{180,210,150});
+        if (s.plane.crashing) for (int i=0;i<7;++i) {
+            const float age=std::fmod(time_*1.2f+i*0.14f,1.f);
+            const Vec2 smoke=at({-25-age*95,-age*65});
+            circle(smoke,10+age*22,opacity({56,53,51},180*(1-age)));
+            if (i<3) flame(at({-32.f-i*8,0}),12+i*2.f,i);
+        }
     }
     for (const auto& d : s.supplies) {
         const auto p=d.position;

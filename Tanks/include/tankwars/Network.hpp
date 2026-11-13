@@ -31,6 +31,9 @@ public:
     void map(std::uint8_t value);
     void color(std::uint8_t value);
     void rematch();
+    void mode(std::uint8_t teamSize);
+    void seat(PlayerId target, std::uint8_t seat);
+    void botWeapon(PlayerId target, WeaponKind weapon);
     bool connected() const;
     bool welcomed() const;
     PlayerId id() const;

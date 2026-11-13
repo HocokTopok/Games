@@ -18,13 +18,16 @@ Renderer::Renderer(sf::RenderTarget& window, const std::filesystem::path& assets
     if (!font_.openFromFile(assets / "fonts/Rajdhani-SemiBold.ttf")) throw std::runtime_error("Cannot load bundled font. Keep assets beside the executable.");
 }
 sf::Color Renderer::playerColor(std::uint8_t i) {
-    constexpr std::array<sf::Color, 6> colors{sf::Color{114,246,208}, sf::Color{255,120,148}, sf::Color{150,162,255}, sf::Color{255,202,112}, sf::Color{100,195,255}, sf::Color{230,151,255}};
+    constexpr std::array<sf::Color, 8> colors{sf::Color{114,246,208}, sf::Color{255,120,148}, sf::Color{150,162,255}, sf::Color{255,202,112}, sf::Color{100,195,255}, sf::Color{230,151,255}, sf::Color{200,232,110}, sf::Color{255,164,95}};
     return colors[i % colors.size()];
 }
 void Renderer::resize(const Config& c) {
     uiView_.setViewport(viewport(window_.getSize(), 1600.f / 900.f));
     worldView_.setSize({c.worldWidth, c.worldHeight}); worldView_.setCenter({c.worldWidth / 2, c.worldHeight / 2});
-    worldView_.setViewport(viewport(window_.getSize(), c.worldWidth / c.worldHeight));
+    // Every battlefield fits inside the same frame, outside the HUD and weapon controls.
+    const auto ui=uiView_.getViewport();
+    worldView_.setViewport({{ui.position.x+ui.size.x*0.125f,ui.position.y+ui.size.y*(80.f/900)},
+                           {ui.size.x*0.75f,ui.size.y*0.75f}});
     window_.setView(uiView_);
 }
 Vec2 Renderer::uiMouse(sf::Vector2i pixel) const { const auto p = window_.mapPixelToCoords(pixel, uiView_); return {p.x, p.y}; }
@@ -86,7 +89,7 @@ void Renderer::observe(const Snapshot& state) {
         lastEvent_ = e.id;
         if (e.kind==EventKind::SupplyLanded || e.kind==EventKind::Pickup || e.kind==EventKind::FlareImpact) { bursts_.push_back({e.position,e.kind==EventKind::Pickup ? accent : (e.kind==EventKind::FlareImpact ? sf::Color{255,188,64} : sf::Color{219,188,114}),0,0.7f,45}); continue; }
         if (e.kind==EventKind::SkyStrike) { bursts_.push_back({e.position,{255,211,93},0,0.7f,e.radius*1.5f}); shake_=std::max(shake_,7.f); continue; }
-        if (e.kind==EventKind::MortarImpact || e.kind==EventKind::OrbImpact || e.kind==EventKind::Ricochet || e.kind==EventKind::MissileImpact) { addWeaponEffect(e); continue; }
+        if (e.kind==EventKind::MortarImpact || e.kind==EventKind::OrbImpact || e.kind==EventKind::Ricochet || e.kind==EventKind::MissileImpact || e.kind==EventKind::PlaneCrash) { addWeaponEffect(e); continue; }
         const bool shot = e.kind == EventKind::Shot, death = e.kind == EventKind::Destroyed;
         const auto* owner = findTank(state, e.player);
         const bool napalm = e.kind == EventKind::NapalmImpact || (shot && owner && owner->weapon == WeaponKind::Napalm);
@@ -351,39 +354,35 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
 void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool network) {
     text("T / W",{42,24},28,white);
     text(MapFactory::name(c.mapId),{134,34},16,muted);
-    text(network ? "LAN / LIVE" : "SOLO / LIVE",{1550,30},18,accent,true);
-    const auto total = static_cast<int>(s.elapsed);
-    std::ostringstream clock; clock << std::setfill('0') << std::setw(2) << total / 60 << ':' << std::setw(2) << total % 60;
-    text(clock.str(),{800,29},25,white,true);
-    line({42,73},{1558,73},{44,65,82});
-    const float cardWidth = s.players.size() > 2 ? 275.f : 320.f;
-    for (std::size_t i = 0; i < s.players.size(); ++i) {
-        const auto& p = s.players[i]; const auto* t = findTank(s,p.id);
-        const float x = s.players.size() <= 2 ? (i == 0 ? 42.f : 1238.f) : 42.f + static_cast<float>(i) * 393;
-        const auto color = playerColor(p.color);
-        box({x,94},{cardWidth,83},{11,22,36,225},{39,58,75}); box({x,94},{3,83},color);
-        text(p.name + (p.id == local ? " / YOU" : ""),{x+18,104},19,color);
-        const auto hp = t ? std::to_string(static_cast<int>(std::ceil(t->hp))) : "--";
-        text(hp,{x+cardWidth-20-static_cast<float>(hp.size())*14,99},28,white);
-        box({x+18,146},{cardWidth-36,5},{38,54,69}); if (t) box({x+18,146},{(cardWidth-36)*t->healthRatio(),5},color);
+    text(network ? "LAN / LIVE" : "SOLO / LIVE",{1500,30},18,accent,true);
+    const auto total=std::max(0,static_cast<int>(std::ceil(matchDuration-s.elapsed)));
+    std::ostringstream clock; clock << std::setfill('0') << std::setw(2) << total/60 << ':' << std::setw(2) << total%60;
+    text(clock.str(),{800,22},34,total<=30 ? playerColor(1) : white,true);
+    text(s.teamBattle ? "TEAM BATTLE / FRIENDLY FIRE ON" : "THREE MINUTE DUEL",{800,60},14,muted,true);
+    std::array<unsigned,2> rows{};
+    for (const auto& p : s.players) {
+        const auto* t=findTank(s,p.id);
+        const unsigned side=s.teamBattle ? p.team%2 : p.seat%2;
+        const float x=side ? 1408.f : 16.f, y=105.f+rows[side]++*149.f;
+        constexpr float cardWidth=176;
+        const auto color=playerColor(p.color);
+        box({x,y},{cardWidth,128},{11,22,36,245},{39,58,75}); box({x,y},{3,128},color);
+        auto name=p.name+(p.id==local ? " / YOU" : ""); if (name.size()>21) name=name.substr(0,21);
+        text(name,{x+10,y+8},16,color);
+        text(weaponName(p.weapon),{x+10,y+32},14,muted);
+        text(t ? std::to_string(static_cast<int>(std::ceil(t->hp)))+" HP" : "--",{x+10,y+53},25,white);
+        box({x+10,y+88},{156,5},{38,54,69}); if (t) box({x+10,y+88},{156*t->healthRatio(),5},color);
         if (t) {
-            const auto perk=[&](PickupKind kind,float remaining,float duration,Vec2 at,sf::Color ink) {
-                if (remaining<=0) return;
-                circle(at,9,alpha(ink,35),alpha(ink,100));
-                ring(at,11,ink,-pi/2,2*pi*std::clamp(remaining/duration,0.f,1.f));
-                perkIcon(kind,at,5,ink);
-                text(std::to_string(static_cast<int>(std::ceil(remaining))),at+Vec2{16,-9},13,ink);
-            };
-            perk(PickupKind::Damage,t->damageRemaining,15,{x+31,165},{255,160,61});
-            perk(PickupKind::Shield,t->shieldRemaining,10,{x+110,165},{91,186,255});
-            perk(PickupKind::Health,t->healIndicator,1.5f,{x+189,165},{108,245,158});
+            if (t->damageRemaining>0) text("DMG "+std::to_string(static_cast<int>(std::ceil(t->damageRemaining))),{x+10,y+101},14,{255,160,61});
+            if (t->shieldRemaining>0) text("SH "+std::to_string(static_cast<int>(std::ceil(t->shieldRemaining))),{x+94,y+101},14,{91,186,255});
+            if (!t->alive()) text("DESTROYED",{x+10,y+101},14,muted);
+            if (t->healIndicator>0) text("+200",{x+100,y+60},17,{108,245,158});
         }
-        if (t && !t->alive()) text("OFFLINE",{x+18,154},14,muted);
     }
     const auto* tank = findTank(s,local);
     if (tank) {
         const auto color = playerColor(tank->color);
-        box({510,760},{580,104},{10,21,35,240},{43,65,81});
+        box({510,775},{580,92},{10,21,35,240},{43,65,81});
         const bool napalm = tank->weapon == WeaponKind::Napalm, laser = tank->weapon == WeaponKind::Laser;
         const bool mortar=tank->weapon==WeaponKind::Mortar, orb=tank->weapon==WeaponKind::GrowingOrb;
         text(weaponName(tank->weapon),{535,774},16,orb ? sf::Color{177,155,255} : ((napalm || mortar) ? sf::Color{255,160,65} : muted));
@@ -392,9 +391,10 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local, bool netw
         text(laser ? "DAMAGE" : "POWER",{535,805},17,white); text(laser ? (c.laserDamageKnown ? laserDamage : "HOST") : std::to_string(static_cast<int>(power*100)) + "%",{735,801},24,color);
         box({535,842},{230,4},{39,57,70}); box({535,842},{230*power,4},color);
         line({795,783},{795,845},{42,63,79});
-        const float loaded = 1 - tank->reload / Cannon::reload(tank->weapon,c.weapon);
-        text(napalm ? "AUTO / NAPALM" : (tank->reload > 0 ? "RECHARGING" : (mortar ? "MORTAR READY" : (orb ? "ORB READY" : (laser ? "LASER ONLINE" : "READY TO FIRE")))),{825,779},20,napalm ? sf::Color{255,160,65} : (tank->reload > 0 ? muted : color));
-        text(napalm ? "HOLD SPACE" : (tank->reload > 0 ? std::to_string(tank->reload).substr(0,3) + " SEC" : "SPACE"),{825,807},21,white);
+        const bool guiding=tank->weapon==WeaponKind::Missile && std::ranges::any_of(s.projectiles,[&](const auto& p){return p.owner==tank->id && p.weapon==WeaponKind::Missile;});
+        const float loaded=guiding ? 0.f : 1-tank->reload/Cannon::reload(tank->weapon,c.weapon);
+        text(guiding ? "GUIDING MISSILE" : (napalm ? "AUTO / NAPALM" : (tank->reload > 0 ? "RECHARGING" : (mortar ? "MORTAR READY" : (orb ? "ORB READY" : (laser ? "LASER ONLINE" : "READY TO FIRE"))))),{825,779},20,napalm ? sf::Color{255,160,65} : (tank->reload > 0 ? muted : color));
+        text(guiding ? "LAUNCH LOCKED" : (napalm ? "HOLD SPACE" : (tank->reload > 0 ? std::to_string(tank->reload).substr(0,3) + " SEC" : "SPACE")),{825,807},21,white);
         box({825,842},{235,4},{39,57,70}); box({825,842},{235*std::clamp(loaded,0.f,1.f),4},color);
     }
     text(tank && tank->canFly ? "A  D   MOVE     UP   JUMP / FLY" : "A  D   MOVE     W  S / SCROLL   POWER",{42,814},17,muted);

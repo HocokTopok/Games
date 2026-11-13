@@ -44,13 +44,13 @@ void run() {
     input[1]={0,-tw::pi+0.65f,0,true}; mortarWorld.step(input); input[1].fire=false;
     auto shot=mortarWorld.snapshot().projectiles.at(0);
     require(shot.weapon==tw::WeaponKind::Mortar && mortarWorld.snapshot().lasers.empty(),"guest launches a mortar shell instead of a laser");
-    require(config.weapon.mortarReload==1.9f && config.weapon.laserReload==2.4f && config.weapon.mortarBlastRadius>config.tankHalfWidth*2,"mortar reload increased, railgun unchanged, and mortar radius exceeds tank length");
+    require(config.weapon.mortarReload==1.5f && config.weapon.laserReload==2.4f && config.weapon.mortarBlastRadius>config.tankHalfWidth*2,"mortar reload increased, railgun unchanged, and mortar radius exceeds tank length");
     const auto mortarGuide=tw::Physics::trajectory(mortarWorld.tanks()[1],config,mortarWorld.map(),mortarWorld.tanks());
     do { result=tw::Physics::advance(shot,config.fixedStep,config,mortarWorld.map(),mortarWorld.tanks()); } while (!result.hit && !result.expired);
     require(result.hit && shot.age>2 && tw::length(mortarGuide.back()-shot.position)<4,"slow mortar follows its displayed high arc for several seconds");
     for (int i=0;i<120*7;++i) mortarWorld.step(input);
     const auto impact=mortarWorld.snapshot();
-    require(std::ranges::any_of(impact.events,[](const auto& e){return e.kind==tw::EventKind::MortarImpact && e.radius==78;}),"mortar impact carries its actual blast radius for animation");
+    require(std::ranges::any_of(impact.events,[](const auto& e){return e.kind==tw::EventKind::MortarImpact && e.radius==110;}),"mortar impact carries its actual blast radius for animation");
     require(impact.tanks[0].hp<100 && impact.fires.empty(),"mortar blast damages a nearby tank without leaving napalm");
     target.position={config.weapon.mortarBlastRadius+config.tankHalfWidth+1,0};
     require(tw::Physics::areaDamage({0,0},target,config.weapon.mortarBlastRadius,config.weapon.mortarDamage,config)==0,"mortar cannot damage beyond its blast radius");
@@ -66,7 +66,7 @@ void run() {
     for (int i=0;i<120;++i) world.step(input);
     require(world.tanks()[1].position.y<floor-250,"holding Up sustains flight");
     for (int i=0;i<120*4;++i) world.step(input);
-    require(world.tanks()[1].position.y>=config.worldHeight*0.23f,"flight stays below the scoreboard");
+    require(world.tanks()[1].position.y>=42.f,"flight respects the world ceiling outside the separate HUD");
     input[1].lift=-1;
     for (int i=0;i<120*3;++i) world.step(input);
     require(std::abs(world.tanks()[1].position.y-floor)<0.01f && world.tanks()[1].verticalVelocity==0,"Down descends and lands without sinking");

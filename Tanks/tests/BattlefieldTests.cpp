@@ -103,7 +103,7 @@ void weapons() {
         for (int i=0;i<120;++i) world.step(input);
         input[0].fire=true; world.step(input); input[0].fire=false;
         for (int i=0;i<120*9;++i) world.step(input);
-        require((surface!=world.snapshot().terrain)==(kind==tw::WeaponKind::Mortar),"only mortar changes terrain");
+        require((surface!=world.snapshot().terrain)==(kind==tw::WeaponKind::Mortar || kind==tw::WeaponKind::Missile || kind==tw::WeaponKind::Flare),"mortar, missile and sky beam change terrain");
         world.reset(players(kind,tw::WeaponKind::Mortar)); require(surface==world.snapshot().terrain,"rematch restores terrain");
     }
     tank.hp=500; tank.maxHp=1000; tank.shieldRemaining=10;

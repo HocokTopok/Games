@@ -122,6 +122,7 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
                 (owner && (owner->weapon==WeaponKind::GrowingOrb || owner->weapon==WeaponKind::Ricochet) ? Cue::OrbShot : (owner && owner->weapon==WeaponKind::Laser ? Cue::LaserShot : Cue::CannonShot));
             gain=0.58f; break;
         case EventKind::MissileImpact:
+        case EventKind::PlaneCrash:
         case EventKind::MortarImpact: cue=Cue::MortarBlast; gain=0.95f; priority=4; a.duck=1; break;
         case EventKind::SkyStrike: cue=Cue::MortarBlast; gain=1; priority=4; a.duck=1; break;
         case EventKind::OrbImpact: cue=Cue::OrbBlast; gain=0.5f+e.intensity*0.45f; priority=3; a.duck=std::max(a.duck,0.7f); break;
@@ -142,8 +143,8 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
                 const float volume=(0.055f+charge*0.09f)*near;
                 if (volume>loop.target) { loop.target=volume; loop.sound->setPitch(0.8f+charge*0.48f); a.pan(*loop.sound,p.position); }
             } else if (p.weapon==WeaponKind::Mortar && p.velocity.y>0) {
-                auto& loop=a.loops[1]; const float volume=0.13f*near*std::clamp(p.velocity.y/240.f,0.f,1.f);
-                if (volume>loop.target) { loop.target=volume; loop.sound->setPitch(0.8f+std::clamp(p.velocity.y/600.f,0.f,0.8f)); a.pan(*loop.sound,p.position); }
+                auto& loop=a.loops[1]; const float volume=0.11f*near*std::clamp(p.velocity.y/300.f,0.f,1.f);
+                if (volume>loop.target) { loop.target=volume; loop.sound->setPitch(0.82f+std::clamp(p.velocity.y/1100.f,0.f,0.35f)); a.pan(*loop.sound,p.position); }
             }
         }
         for (const auto& strike : s.skyStrikes) if (strike.age>=c.weapon.skyWarmup) {

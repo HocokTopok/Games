@@ -54,7 +54,8 @@ Clip synthesize(Cue cue) {
         case Cue::Engine:
             value=0.27*std::sin(tau*47*t)*(0.7+0.3*std::sin(tau*13*t))+0.16*std::sin(tau*94*t)+low*1.4; break;
         case Cue::MortarWhistle:
-            value=0.25*std::sin(tau*640*t+3*std::sin(tau*4*t))+0.09*std::sin(tau*1280*t)+high*0.12; break;
+            value=(mid-low)*1.5*(0.78+0.12*std::sin(tau*1.7*t))+high*0.12+low*0.35;
+            value+=0.045*std::sin(tau*510*t+0.55*std::sin(tau*0.8*t))*(0.65+0.35*mid); break;
         case Cue::LaserShot:
             value=0.45*chirp(t,2200,230,0.07)*decay(t,0.18)+mid*0.4*decay(t,0.08); break;
         case Cue::Impact:
@@ -94,6 +95,12 @@ Clip synthesize(Cue cue) {
             samples[i]=samples[samples.size()-seam+i]*(1-t)+samples[i]*t;
         }
         samples.resize(samples.size()-seam);
+        const auto endpoint=samples.front();
+        for (std::size_t i=0;i<256;++i) {
+            const double blend=static_cast<double>(i)/255;
+            auto& value=samples[samples.size()-256+i];
+            value=value*(1-blend)+endpoint*blend;
+        }
     }
     double peak=0; for (auto v : samples) peak=std::max(peak,std::abs(v));
     Clip clip; clip.loop=loop; clip.samples.reserve(samples.size());

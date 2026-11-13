@@ -84,7 +84,11 @@ FlightResult advance(Projectile& p, float dt, const Config& c, const Terrain& ma
     const bool ricochet=p.weapon==WeaponKind::Ricochet;
     if (p.weapon==WeaponKind::Missile) {
         const auto owner=std::ranges::find(tanks,p.owner,&Tank::id);
-        if (owner!=tanks.end() && owner->alive()) steerMissile(p,guidanceTrace(*owner,c,map,tanks).to,dt,c.weapon.missileTurnRate);
+        if (owner!=tanks.end() && owner->alive()) {
+            steerMissile(p,guidanceTrace(*owner,c,map,tanks).to,dt,c.weapon.missileTurnRate);
+            const float speed=length(p.velocity), desired=owner->power*c.weapon.missileSpeedScale;
+            if (speed>1) p.velocity=p.velocity*((speed+std::clamp(desired-speed,-120.f*dt,120.f*dt))/speed);
+        }
     }
     const float gravity=(orb || p.weapon==WeaponKind::Missile) ? 0.f : c.gravity*(p.weapon==WeaponKind::Mortar ? c.weapon.mortarGravityScale : (p.weapon==WeaponKind::Flare ? c.weapon.flareGravityScale : 1.f));
     const float lifetime=Cannon::lifetime(p,c.weapon);

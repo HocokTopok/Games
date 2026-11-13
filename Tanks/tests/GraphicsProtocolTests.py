@@ -120,7 +120,7 @@ def main():
                         continue
                     phase, projectiles, events = state(payload)
                     seen[i].update(kind for kind, _ in projectiles)
-                    if any(kind == 4 and radius == 78 for kind, radius, _ in events):
+                    if any(kind == 4 and radius == 110 for kind, radius, _ in events):
                         seen[i].add("blast")
                     if {3, 4, "blast"} <= seen[0] and {3, 4, "blast"} <= seen[1]:
                         print("Graphics protocol passed: full orb, mortar and explosion data with absent and partial capabilities")

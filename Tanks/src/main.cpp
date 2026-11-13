@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
             if (arg == "--help" || arg == "-h") {
                 std::cout << "Tank Wars / Nightfall\n"
                     "  --host                Create a LAN room\n  --join IP[:PORT]      Join a LAN room\n"
-                    "  --port N              Listen/connect port (53000)\n  --players N           Room capacity: 2-4\n"
+                    "  --port N              Listen/connect port (53000)\n  --players N           Room capacity: 2-8\n"
                     "  --map N               Demo battlefield: 1-4\n  --demo                Start a solo duel\n  --ready               Automatically ready in lobby\n"
                     "  --server              Headless authoritative server\n  --seconds N           Headless server duration\n"
                     "  --config FILE         Gameplay configuration\n  --assets DIR          Bundled assets directory\n"
@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
             if (arg == "--host") options.host = true;
             else if (arg == "--join") options.join = next();
             else if (arg == "--port") port = number(next(),"--port",65535);
-            else if (arg == "--players") players = number(next(),"--players",4);
+            else if (arg == "--players") players = number(next(),"--players",8);
             else if (arg == "--map") battlefield = number(next(),"--map",4);
             else if (arg == "--demo") options.demo = true;
             else if (arg == "--ready") options.ready = true;

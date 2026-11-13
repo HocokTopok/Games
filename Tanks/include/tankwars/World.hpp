@@ -24,6 +24,8 @@ private:
     void detonate(const Hit& hit, const Projectile& projectile);
     void detonateMissile(const Hit& hit, const Projectile& projectile);
     void updateSupplies(float dt);
+    void damagePlane(Vec2 center, float radius, float amount);
+    bool hitPlane(Vec2 from, Vec2 to, float radius, float& fraction) const;
     Config config_;
     std::unique_ptr<Terrain> map_;
     std::vector<Tank> tanks_;
@@ -34,7 +36,7 @@ private:
     std::vector<SkyStrike> skyStrikes_;
     std::vector<SupplyDrop> supplies_;
     SupplyPlane plane_;
-    float supplyTimer_{30};
+    float supplyTimer_{30}, planeDirection_{1};
     std::uint32_t randomState_{};
     std::uint32_t tick_{}, round_{}, nextProjectile_{1}, nextEvent_{1};
 };

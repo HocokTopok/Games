@@ -6,7 +6,7 @@ const char* MapFactory::name(std::uint8_t id) {
     return names[std::min<unsigned>(id,3)];
 }
 const char* MapFactory::description(std::uint8_t id) {
-    constexpr const char* descriptions[]{"01 / 1600 m / dunes & desert wind", "02 / 2200 m / three towering peaks", "03 / 2600 m / deep jagged ravine", "04 / 3200 m / steep urban ridges"};
+    constexpr const char* descriptions[]{"01 / 1600 m / dunes & desert wind", "02 / 2200 m / three towering peaks", "03 / 2600 m / deep jagged ravine", "04 / 3200 m / districts, ravines & hills"};
     return descriptions[std::min<unsigned>(id,3)];
 }
 Config MapFactory::preset(Config c, std::uint8_t id) {
@@ -41,11 +41,11 @@ float NightfallBasin::originalHeight(float x) const {
         return height*(0.88f-0.65f*sides*sides+rough);
     }
     if (config_.mapId==3) {
-        // Unequal widths and heights create short, steep cover rather than rolling waves.
-        return height*(0.81f-0.22f*peak(0.12f,0.040f)-0.34f*peak(0.27f,0.052f)
-                       -0.20f*peak(0.39f,0.030f)-0.39f*peak(0.53f,0.050f)
-                       -0.26f*peak(0.66f,0.034f)-0.32f*peak(0.79f,0.048f)-0.18f*peak(0.91f,0.030f)
-                       +0.012f*std::sin(t*17));
+        // Low, gently rolling districts separated by two hills and shallow gullies.
+        return height*(0.73f + 0.003f*std::sin(t*5) + 0.002f*std::sin(t*11)
+                       -0.15f*peak(0.32f,0.043f)-0.19f*peak(0.72f,0.052f)
+                       +0.075f*peak(0.47f,0.027f)+0.065f*peak(0.87f,0.030f)
+                       +0.055f*peak(0.17f,0.025f));
     }
     return config_.groundHeight+h*(0.7f*std::cos(t)+0.3f*std::cos(3*t));
 }
@@ -78,6 +78,19 @@ void NightfallBasin::crater(Vec2 center, float radius, float depth) {
         heights_[i]=std::min(bedrock(i*maxStep),std::max(heights_[i],original[i]+heights_[i-1]-original[i-1]-maxStep));
     for (std::size_t i=heights_.size()-1;i>0;--i)
         heights_[i-1]=std::min(bedrock((i-1)*maxStep),std::max(heights_[i-1],original[i-1]+heights_[i]-original[i]-maxStep));
+}
+void NightfallBasin::erodeColumn(float center, float radius, float depth) {
+    // Move high ground down first: the beam cuts a level floor across its bright core.
+    float bottom=height(center);
+    for (float x=std::max(0.f,center-radius*0.82f);x<=std::min(config_.worldWidth,center+radius*0.82f);x+=4)
+        bottom=std::max(bottom,height(x));
+    for (std::size_t i=0;i<heights_.size();++i) {
+        const float x=i*config_.worldWidth/(heights_.size()-1), d=std::abs(x-center)/radius;
+        if (d>=1) continue;
+        const float edge=std::clamp((1-d)/0.18f,0.f,1.f);
+        const float cut=depth + std::min(depth*3.f,std::max(0.f,bottom-heights_[i]));
+        heights_[i]=std::min(bedrock(x),heights_[i]+cut*edge);
+    }
 }
 float NightfallBasin::movementScale(float x) const {
     const float u=x/config_.worldWidth;

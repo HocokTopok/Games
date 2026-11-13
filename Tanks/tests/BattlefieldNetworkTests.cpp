@@ -63,7 +63,7 @@ void run() {
         host.poll(); join.poll(); require(host.connected() && join.connected(),"new FX stream remains connected");
         const auto& a=host.latest(); const auto& b=join.latest();
         flames|=!b.fires.empty();
-        mortar|=std::ranges::any_of(b.events,[](const auto& e){return e.kind==tw::EventKind::MortarImpact && e.radius==78;});
+        mortar|=std::ranges::any_of(b.events,[](const auto& e){return e.kind==tw::EventKind::MortarImpact && e.radius==110;});
         craters|=b.terrain!=original;
         plane|=b.plane.active;
         for (const auto& d : b.supplies) {

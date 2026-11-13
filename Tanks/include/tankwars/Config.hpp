@@ -14,7 +14,7 @@ struct WeaponSpec {
     float napalmReload{0.12f}, napalmDirectDamage{2.7f/1.2f}, napalmSplashDamage{1.8f/1.2f}, napalmSpread{0.075f};
     float fireRadius{60}, fireDuration{4.f/1.5f}, fireDamagePerSecond{6.f/1.2f};
     float burnDuration{2.5f}, burnDamagePerSecond{2.5f/1.2f};
-    float mortarReload{1.9f}, mortarSpeedScale{0.56f}, mortarGravityScale{0.3f}, mortarBlastRadius{78}, mortarDamage{100};
+    float mortarReload{1.5f}, mortarSpeedScale{0.61f}, mortarGravityScale{0.3f}, mortarBlastRadius{110}, mortarDamage{150};
     float orbReload{0.85f}, orbSpeedScale{0.75f}, orbGrowthSeconds{5}, orbInitialRadius{4}, orbMaxRadius{30}, orbLifetime{20};
     float flareReload{12}, flareSpeedScale{0.8f}, flareGravityScale{0.6f};
     float skyWarmup{0.65f}, skyDuration{4}, skyRadius{115}, skyDamagePerSecond{140};

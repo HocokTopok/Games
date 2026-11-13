@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(TankWars VERSION 1.5.0 LANGUAGES CXX)
+project(TankWars VERSION 1.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,10 @@ target_link_libraries(tankwars_renderer PUBLIC tankwars_core SFML::Graphics)
 add_executable(tank_wars src/main.cpp src/Game.cpp src/Audio.cpp)
 target_link_libraries(tank_wars PRIVATE tankwars_network tankwars_audio_synth tankwars_renderer SFML::Graphics SFML::Audio)
 target_compile_definitions(tank_wars PRIVATE TANKWARS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}" TANKWARS_VERSION="${PROJECT_VERSION}")
+file(GLOB_RECURSE TANKWARS_ASSETS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/*")
+string(JOIN "\n" TANKWARS_ASSET_MANIFEST ${TANKWARS_ASSETS})
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/asset-manifest.txt" CONTENT "${TANKWARS_ASSET_MANIFEST}\n")
+set_property(TARGET tank_wars APPEND PROPERTY LINK_DEPENDS ${TANKWARS_ASSETS} "${CMAKE_CURRENT_BINARY_DIR}/asset-manifest.txt")
 set_property(TARGET tank_wars APPEND PROPERTY LINK_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/game.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/Rajdhani-SemiBold.ttf"
@@ -53,6 +57,7 @@ foreach(target tankwars_core tankwars_network tankwars_audio_synth tankwars_rend
     endif()
 endforeach()
 add_custom_command(TARGET tank_wars POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_FILE_DIR:tank_wars>/assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:tank_wars>/assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/config $<TARGET_FILE_DIR:tank_wars>/config)
 if(APPLE)
@@ -62,6 +67,7 @@ if(APPLE)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${APP_DIR}/Contents/MacOS"
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:tank_wars> "${APP_DIR}/Contents/MacOS/tank_wars"
         COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/Info.plist "${APP_DIR}/Contents/Info.plist"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${APP_DIR}/Contents/Resources/assets"
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/assets "${APP_DIR}/Contents/Resources/assets"
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/config "${APP_DIR}/Contents/Resources/config")
     install(DIRECTORY "${APP_DIR}" DESTINATION .)
@@ -71,6 +77,14 @@ install(DIRECTORY assets config DESTINATION .)
 
 if(TANKWARS_BUILD_TESTS)
     enable_testing()
+    add_executable(nightfall_network_tests tests/NightfallNetworkTests.cpp)
+    target_link_libraries(nightfall_network_tests PRIVATE tankwars_network tankwars_renderer)
+    target_compile_definitions(nightfall_network_tests PRIVATE TANKWARS_TEST_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+    add_test(NAME nightfall_network COMMAND nightfall_network_tests)
+    set_tests_properties(nightfall_network PROPERTIES TIMEOUT 20)
+    add_executable(nightfall_tests tests/NightfallTests.cpp)
+    target_link_libraries(nightfall_tests PRIVATE tankwars_core)
+    add_test(NAME nightfall COMMAND nightfall_tests)
     add_executable(missile_tests tests/MissileTests.cpp)
     target_link_libraries(missile_tests PRIVATE tankwars_core)
     add_test(NAME missile COMMAND missile_tests)

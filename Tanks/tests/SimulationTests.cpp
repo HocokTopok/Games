@@ -52,13 +52,14 @@ void run() {
     session.rematch(); check(session.snapshot().phase==tw::Phase::Lobby && session.snapshot().players.size()==1,"rematch removes disconnected player");
     c.playerLimit=4; c.teams=true; tw::GameSession teams(c);
     for (unsigned i=0;i<4;++i) { teams.addPlayer("TEAM"); teams.setReady(static_cast<tw::PlayerId>(i),true); }
+    for (const auto& p : teams.snapshot().players) teams.setReady(p.id,true);
     teams.step(); check(teams.snapshot().tanks.size()==4,"four-player extension");
     auto invalid=c; invalid.weapon.reloadSeconds=0;
     bool rejected=false; try { invalid.validate(); } catch (...) { rejected=true; }
     check(rejected,"invalid config rejected");
     tw::World friendly(c);
     std::vector<tw::Player> players{{0,0,0,true,true,false,"A"},{1,1,0,true,true,false,"B"}};
-    friendly.reset(players); std::array<tw::Input,tw::maxPlayers> inputs{};
+    players[1].seat=1; friendly.reset(players); std::array<tw::Input,tw::maxPlayers> inputs{};
     inputs[0]={1,0,0,false}; inputs[1]={-1,-tw::pi,0,false};
     for (int i=0;i<1100;++i) friendly.step(inputs);
     check(friendly.tanks()[1].position.x-friendly.tanks()[0].position.x>=c.tankHalfWidth*2,"tanks cannot overlap");
@@ -67,7 +68,7 @@ void run() {
     inputs[0].fire=true; friendly.step(inputs);
     check(friendly.snapshot().tanks[0].hp<100,"self damage enabled");
     check(friendly.snapshot().tanks[1].hp<100,"friendly fire enabled");
-    tw::GameSession duel(c); duel.addPlayer("HUMAN"); duel.addPlayer("BOT",true);
+    c.teams=false; c.playerLimit=2; tw::GameSession duel(c); duel.addPlayer("HUMAN"); duel.addPlayer("BOT",true);
     duel.setReady(0,true); duel.setReady(1,true); duel.step();
     for (int i=0;i<120*50 && duel.snapshot().phase==tw::Phase::Playing;++i) {
         duel.setInput(0,{0,-0.5f,0,false}); duel.step();

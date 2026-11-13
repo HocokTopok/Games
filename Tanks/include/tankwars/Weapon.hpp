@@ -55,6 +55,6 @@ public:
         default: return spec.reloadSeconds;
         }
     }
-    static float lifetime(const Projectile& p, const WeaponSpec& spec) { return p.weapon == WeaponKind::GrowingOrb ? spec.orbLifetime : spec.projectileLifetime; }
+    static float lifetime(const Projectile& p, const WeaponSpec& spec) { return p.weapon == WeaponKind::Missile ? 20.f : (p.weapon == WeaponKind::GrowingOrb ? spec.orbLifetime : spec.projectileLifetime); }
 };
 }

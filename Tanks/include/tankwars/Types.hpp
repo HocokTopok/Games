@@ -9,9 +9,11 @@
 
 namespace tw {
 constexpr float pi = std::numbers::pi_v<float>;
-constexpr std::size_t maxPlayers = 4;
+constexpr std::size_t maxPlayers = 8;
+constexpr float matchDuration = 180.f;
 using PlayerId = std::uint8_t;
 constexpr PlayerId noPlayer = 255;
+constexpr PlayerId planeTarget = 254;
 
 struct Vec2 {
     float x{}, y{};
@@ -36,7 +38,7 @@ struct Input {
     float lift{};
 };
 enum class Phase : std::uint8_t { Lobby, Playing, Victory };
-enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike, MissileImpact };
+enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike, MissileImpact, PlaneCrash };
 // GrowingOrb is retained only for the legacy preset/protocol; the menu has one ricochet weapon.
 enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb, Ricochet, Flare, Missile };
 struct GameEvent {
@@ -54,6 +56,7 @@ struct Player {
     std::string name;
     WeaponKind weapon{WeaponKind::Cannon};
     bool weaponChosen{};
+    std::uint8_t seat{};
 };
 struct Tank {
     PlayerId id{};
@@ -67,6 +70,7 @@ struct Tank {
     float maxHp{100};
     float damageRemaining{}, shieldRemaining{}, healIndicator{};
     bool inMud{};
+    Vec2 velocity{};
     bool alive() const { return hp > 0.f; }
     float healthRatio() const { return std::clamp(hp / std::max(1.f,maxHp),0.f,1.f); }
     Vec2 pivot() const { return position + rotate({0, -12}, bodyAngle); }
@@ -108,7 +112,11 @@ struct SupplyDrop {
     PickupKind kind{};
     bool landed{};
 };
-struct SupplyPlane { bool active{}; Vec2 position{}; float targetX{}; bool released{}; };
+struct SupplyPlane {
+    bool active{}; Vec2 position{}; float targetX{}; bool released{};
+    float hp{200}, direction{1}, fallSpeed{}, angle{};
+    bool crashing{};
+};
 struct Snapshot {
     std::uint32_t tick{}, round{};
     Phase phase{Phase::Lobby};
@@ -127,6 +135,8 @@ struct Snapshot {
     std::vector<float> terrain;
     std::vector<SupplyDrop> supplies;
     SupplyPlane plane;
+    bool teamBattle{}, modernRules{};
+    std::uint8_t roomSize{2};
 };
 inline const Tank* findTank(const Snapshot& state, PlayerId id) {
     for (const auto& tank : state.tanks) if (tank.id == id) return &tank;

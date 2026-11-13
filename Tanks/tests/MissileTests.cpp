@@ -14,7 +14,7 @@ std::vector<tw::Player> players() {
 void steering() {
     tw::Config c; c.hillHeight=0;
     auto map=tw::MapFactory::create(c);
-    tw::Tank owner; owner.id=0; owner.weapon=tw::WeaponKind::Missile; owner.position={220,600}; owner.aim=0;
+    tw::Tank owner; owner.id=0; owner.weapon=tw::WeaponKind::Missile; owner.power=550/c.weapon.missileSpeedScale; owner.position={220,600}; owner.aim=0;
     tw::Tank target; target.id=1; target.position={1000,600};
     std::array tanks{owner,target};
     auto p=tw::Cannon::fire(owner,c.weapon,1); p.position={500,500}; p.velocity={550,0}; p.age=0.3f;
@@ -55,7 +55,7 @@ void damageAndReload(bool shielded,bool boosted) {
     for (int step=0;step<240 && !world.snapshot().projectiles.empty();++step) world.step(input);
     require(world.snapshot().projectiles.empty(),"guided rocket reaches a stationary target");
     require(near(target.hp,shielded ? 1000.f : 1000-120*(boosted ? 1.5f : 1.f)),"direct hit deals exactly 120, captures boost and respects shield");
-    require(world.snapshot().terrain==terrain,"rocket blast does not change terrain");
+    require(world.snapshot().terrain!=terrain,"rocket blast leaves a smaller crater");
     require(std::ranges::any_of(world.snapshot().events,[](const auto& e){return e.kind==tw::EventKind::MissileImpact && near(tw::length(e.normal),1);}),"blast has a unit outward direction for graphics");
     input[0].fire=true;
     while (world.snapshot().elapsed<3.98f) world.step(input);
@@ -105,7 +105,9 @@ void profiles() {
         peaks+=city->height(x)<city->height(x-4) && city->height(x)<city->height(x+4);
         steepest=std::max(steepest,std::abs(city->height(x+4)-city->height(x))/4);
     }
-    require(peaks>=7 && steepest>2,"city has numerous sharply rising cover hills");
+    int gentle=0;
+    for (float x=4;x<3196;x+=4) gentle+=std::abs(city->slope(x))<0.15f;
+    require(peaks>=2 && steepest>0.5f && gentle>200,"city mixes flat building districts, smaller ravines and hills");
     require(near(c.weapon.napalmDirectDamage,2.7f/1.2f) && near(c.weapon.napalmSplashDamage,1.8f/1.2f) && near(c.weapon.fireDamagePerSecond,5) && near(c.weapon.burnDamagePerSecond,2.5f/1.2f),"all napalm damage reduced by the same 1.2 factor");
     require(c.weapon.napalmReload==0.12f && c.weapon.skyRadius==115 && c.weapon.skyDamagePerSecond==140,"fire cadence and beam DPS unchanged while beam is wider");
 }
