@@ -15,9 +15,6 @@ void run() {
     require(titan.hp == 975 && std::abs(titan.healthRatio()-0.975f) < 0.001f,"Titan has finite health and correctly scaled HP bar");
     tw::Physics::damage(titan,2000);
     require(titan.hp == 0,"ordinary damage can destroy a Titan and never makes HP negative");
-    titan.hp = 1000;
-    tw::Physics::crush(titan);
-    require(!titan.alive(),"stomp remains lethal at full Titan health");
 
     tw::Config config;
     config.titanMode = true; config.asymmetricLoadouts = false; config.hillHeight = 0;
@@ -52,9 +49,10 @@ void run() {
         duel.setInput(1,{0,-tw::pi,0,false,0}); duel.step();
     }
     const auto landed = duel.snapshot();
-    require(landed.phase == tw::Phase::Victory && landed.winner == 1,"landing on a Titan ends the match with a victory");
-    require(landed.tanks[0].hp == 0 && landed.tanks[1].hp == 1000,"stomp destroys only the victim");
-    require(std::ranges::any_of(landed.events,[](const auto& event) { return event.kind == tw::EventKind::Destroyed && event.player == 0; }),"stomp destruction is broadcast as a legacy-compatible event");
+    require(landed.phase == tw::Phase::Playing && landed.winner == tw::noPlayer,"landing through a Titan keeps the match playing");
+    require(landed.tanks[0].hp == 1000 && landed.tanks[1].hp == 1000,"landing causes no contact damage");
+    require(std::abs(landed.tanks[1].position.y-(duel.world().map().height(landed.tanks[1].position.x)-config.tankHalfHeight))<0.01f,"flyer lands on terrain without bouncing off another tank");
+    require(landed.events.empty(),"tank contact creates no impact or destruction event");
     config.titanHealth = std::numeric_limits<float>::infinity();
     bool rejected = false;
     try { config.validate(); } catch (...) { rejected = true; }
@@ -62,6 +60,6 @@ void run() {
 }
 }
 int main() {
-    try { run(); std::cout << "Titan checks passed: armor, hitscan laser, flight, lethal stomp, victory\n"; return 0; }
+    try { run(); std::cout << "Titan checks passed: armor, hitscan laser, flight and harmless landing\n"; return 0; }
     catch (const std::exception& e) { std::cerr << "FAIL: " << e.what() << '\n'; return 1; }
 }

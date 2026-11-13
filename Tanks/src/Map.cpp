@@ -38,7 +38,8 @@ float NightfallBasin::originalHeight(float x) const {
     if (config_.mapId==2) {
         const float sides=2*u-1, envelope=4*u*(1-u);
         const float rough=envelope*(0.021f*std::sin(t*7+0.4f)+0.012f*std::sin(t*13+1.3f)+0.008f*std::sin(t*23));
-        return height*(0.88f-0.65f*sides*sides+rough);
+        // Lift the ravine floor smoothly while preserving the high banks and jagged walls.
+        return height*(0.88f-0.65f*sides*sides+rough-0.08f*std::pow(envelope,4));
     }
     if (config_.mapId==3) {
         // Low, gently rolling districts separated by two hills and shallow gullies.
@@ -56,7 +57,8 @@ float NightfallBasin::height(float x) const {
 }
 float NightfallBasin::bedrock(float x) const {
     const float base=config_.groundHeight+config_.hillHeight+32+5*std::cos(x/config_.worldWidth*4*pi);
-    return config_.mapId==2 ? std::max(base,config_.worldHeight*0.965f) : base;
+    // Even an eroded floor remains above the central weapon panel.
+    return config_.mapId==2 ? std::min(base,config_.worldHeight*0.835f) : base;
 }
 void NightfallBasin::crater(Vec2 center, float radius, float depth) {
     const float gap=std::max(0.f,height(center.x)-center.y);

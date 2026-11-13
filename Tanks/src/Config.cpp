@@ -115,7 +115,7 @@ void Config::validate() const {
     require(weapon.blastRadius >= 10 && weapon.blastRadius <= 400 && weapon.projectileRadius >= 1 && weapon.projectileRadius <= 10, "blast / projectile radius");
     require(weapon.barrelLength >= 28 && weapon.barrelLength <= 60 && weapon.projectileLifetime >= 1 && weapon.projectileLifetime <= 20, "barrel / projectile lifetime");
     require(snapshotRate >= 10 && snapshotRate <= 60 && inputRate >= 20 && inputRate <= 120 && interpolationDelay >= 0 && interpolationDelay <= 0.3f && inputTimeout >= 0.1f && inputTimeout <= 2, "network rates");
-    require(port > 0 && playerLimit >= 2 && playerLimit <= 8 && (!teams || playerLimit==4 || playerLimit==8), "port / players / team size");
+    require(port > 0 && (teams ? playerLimit==4 : playerLimit==2), "port / players (1v1 or 2v2)");
     require(windowWidth >= 800 && windowWidth <= 7680 && windowHeight >= 450 && windowHeight <= 4320 && frameLimit <= 360, "window");
 }
 }

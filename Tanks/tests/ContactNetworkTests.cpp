@@ -21,7 +21,7 @@ void run() {
             if (predicate()) return;
             std::this_thread::sleep_for(5ms);
         }
-        throw std::runtime_error("Timed out driving authoritative stomp");
+        throw std::runtime_error("Timed out driving authoritative contact");
     };
     require(ground.connect("127.0.0.1",server.port(),"GROUND"),"ground pilot connects");
     drive([&] { return ground.welcomed(); });
@@ -29,19 +29,22 @@ void run() {
     drive([&] { return flyer.welcomed() && ground.latest().players.size() == 2; });
     ground.ready(true); flyer.ready(true);
     drive([&] { return ground.latest().phase == tw::Phase::Playing && flyer.latest().phase == tw::Phase::Playing; });
-    drive([&] { return flyer.latest().tanks[1].position.x <= 500; },{-1,-tw::pi,0,false,0});
+    drive([&] { return flyer.latest().tanks[1].position.x <= 210; },{-1,-tw::pi,0,false,0});
+    require(flyer.latest().tanks[0].hp==config.titanHealth && flyer.latest().tanks[1].hp==config.titanHealth,"ground tanks pass through each other without damage");
     drive([&] { return flyer.latest().tanks[1].position.y < 400; },{0,-tw::pi,0,false,1});
-    drive([&] { return flyer.latest().tanks[1].position.x <= 305; },{-1,-tw::pi,0,false,1});
-    require(flyer.latest().tanks[0].hp == config.titanHealth,"flight alone does not damage the target");
-    drive([&] { return ground.latest().phase == tw::Phase::Victory && flyer.latest().phase == tw::Phase::Victory; },{0,-tw::pi,0,false,-1});
+    drive([&] { return flyer.latest().tanks[1].position.x >= 300; },{1,-tw::pi,0,false,1});
+    const float floor=config.groundHeight-config.tankHalfHeight;
+    drive([&] { return ground.latest().tanks[1].position.y>=floor-0.01f && flyer.latest().tanks[1].position.y>=floor-0.01f; },{0,-tw::pi,0,false,-1});
     for (const auto* state : {&ground.latest(),&flyer.latest()}) {
-        require(state->winner == 1 && state->tanks[0].hp == 0 && state->tanks[1].hp == config.titanHealth,"both clients agree on lethal stomp and winner");
-        require(state->tanks[0].maxHp == config.titanHealth && state->tanks[1].maxHp == config.titanHealth,"both clients receive the authoritative health capacity");
-        require(std::ranges::any_of(state->events,[](const auto& e) { return e.kind == tw::EventKind::Destroyed && e.player == 0; }),"destruction event replicated to each pilot");
+        require(state->phase==tw::Phase::Playing && state->winner==tw::noPlayer,"contact does not end the match");
+        require(state->tanks[0].hp==config.titanHealth && state->tanks[1].hp==config.titanHealth,"both clients agree on harmless landing");
+        require(state->tanks[0].maxHp==config.titanHealth && state->tanks[1].maxHp==config.titanHealth,"both clients receive authoritative health capacity");
+        require(state->events.empty(),"no contact impact or destruction is replicated");
+        require(std::abs(state->tanks[0].position.x-state->tanks[1].position.x)<config.tankHalfWidth,"tanks can occupy the same ground position");
     }
 }
 }
 int main() {
-    try { run(); std::cout << "Authoritative stomp passed for both TCP clients\n"; return 0; }
+    try { run(); std::cout << "Authoritative pass-through and harmless landing passed for both TCP clients\n"; return 0; }
     catch (const std::exception& e) { std::cerr << "FAIL: " << e.what() << '\n'; return 1; }
 }

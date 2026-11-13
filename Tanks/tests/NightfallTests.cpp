@@ -13,16 +13,22 @@ std::vector<tw::Player> pilots(tw::WeaponKind weapon) {
     return p;
 }
 void teams() {
-    tw::Config c; c.loadoutSelection=true; tw::GameSession game(c); game.addPlayer("HOST");
-    require(!game.setMode(1,4) && game.setMode(0,4),"only host can choose 4v4");
-    auto s=game.snapshot(); require(s.players.size()==8 && game.config().playerLimit==8,"all seven open seats have bots");
-    require(std::ranges::count(s.players,true,&tw::Player::bot)==7,"one human and seven bots");
-    require(std::ranges::count(s.players,0,&tw::Player::team)==4 && std::ranges::count(s.players,1,&tw::Player::team)==4,"teams have four seats each");
+    tw::Config c; c.loadoutSelection=true;
+    for (bool teamMode : {false,true}) for (unsigned capacity : {3u,8u}) {
+        auto invalid=c; invalid.teams=teamMode; invalid.playerLimit=capacity;
+        bool rejected=false; try { invalid.validate(); } catch (...) { rejected=true; }
+        require(rejected,"unsupported room capacities are rejected");
+    }
+    tw::GameSession game(c); game.addPlayer("HOST");
+    require(!game.setMode(0,4) && !game.setMode(1,2) && game.setMode(0,2),"4v4 is unavailable and only host can choose 2v2");
+    auto s=game.snapshot(); require(s.players.size()==4 && game.config().playerLimit==4,"all three open seats have bots");
+    require(std::ranges::count(s.players,true,&tw::Player::bot)==3,"one human and three bots");
+    require(std::ranges::count(s.players,0,&tw::Player::team)==2 && std::ranges::count(s.players,1,&tw::Player::team)==2,"teams have two seats each");
     auto id=game.addPlayer("GUEST"); require(id && *id!=0,"joining human replaces a bot");
-    s=game.snapshot(); require(s.players.size()==8 && std::ranges::count(s.players,true,&tw::Player::bot)==6,"capacity remains eight");
-    require(!game.setSeat(*id,0,7) && game.setSeat(*id,*id,7),"guest can move self but cannot move host");
+    s=game.snapshot(); require(s.players.size()==4 && std::ranges::count(s.players,true,&tw::Player::bot)==2,"capacity remains four");
+    require(!game.setSeat(*id,0,3) && game.setSeat(*id,*id,3),"guest can move self but cannot move host");
     s=game.snapshot(); const auto guest=std::ranges::find(s.players,*id,&tw::Player::id);
-    require(guest->team==1 && guest->seat==7,"guest joins other team and slot");
+    require(guest->team==1 && guest->seat==3,"guest joins other team and slot");
     require(game.setSeat(0,*id,2),"host can move another pilot");
     // Keep the snapshot alive while resolving the bot ID.
     s=game.snapshot(); const auto botId=std::ranges::find(s.players,true,&tw::Player::bot)->id;
@@ -30,7 +36,7 @@ void teams() {
     game.setWeapon(0,tw::WeaponKind::Mortar); game.setWeapon(*id,tw::WeaponKind::Missile);
     game.setReady(0,true); game.setReady(*id,true);
     require(game.setMap(0,2),"mixed human and bot roster can deploy"); game.step(); s=game.snapshot();
-    require(s.phase==tw::Phase::Playing && s.tanks.size()==8,"eight tanks spawn");
+    require(s.phase==tw::Phase::Playing && s.tanks.size()==4,"four tanks spawn");
     std::set<int> locations;
     for (const auto& t : s.tanks) {
         require(locations.insert(static_cast<int>(t.position.x)).second,"starting seats do not overlap");
@@ -46,7 +52,7 @@ void teams() {
     for (auto& t : const_cast<std::vector<tw::Tank>&>(game.world().tanks())) t.hp=0;
     for (int i=0;i<120*25 && game.snapshot().phase==tw::Phase::Playing;++i) game.step();
     require(game.snapshot().phase==tw::Phase::Victory,"team fight resolves after pending projectiles");
-    game.rematch(); require(game.snapshot().players.size()==8,"departed players are replaced by bots on rematch");
+    game.rematch(); require(game.snapshot().players.size()==4,"departed players are replaced by bots on rematch");
 }
 void botCombat() {
     for (std::uint8_t map=0;map<4;++map) for (auto kind : tw::selectableWeapons) {
@@ -99,7 +105,8 @@ void aircraft() {
         tw::World world(c,123); world.reset(pilots(tw::WeaponKind::Missile)); std::array<tw::Input,tw::maxPlayers> input{};
         for (int i=0;i<120*32;++i) world.step(input);
         auto s=world.snapshot(); require(s.plane.active && s.plane.direction==1 && s.plane.hp==200,"first plane has 200 HP and flies right");
-        for (float x=0;x<c.worldWidth;x+=4) require(s.plane.position.y+40<world.map().height(x),"flight path clears every mountain");
+        require(s.plane.position.y/c.worldHeight>=0.04f && s.plane.position.y/c.worldHeight<=0.071f,"plane flies just below the top edge on every map");
+        for (float x=0;x<=c.worldWidth;x+=4) require(s.plane.position.y+96<=world.map().height(x)+0.01f,"flight path clears every mountain with a wide margin");
         if (mapId==0) {
             auto& owner=const_cast<tw::Tank&>(world.tanks()[0]);
             for (int hit=0;hit<2;++hit) {

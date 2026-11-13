@@ -3,7 +3,7 @@
 #include "tankwars/Weapon.hpp"
 
 namespace tw {
-GameSession::GameSession(Config config) : config_(config), world_(config) {}
+GameSession::GameSession(Config config) : config_(config), world_(config) { config_.validate(); }
 std::optional<PlayerId> GameSession::addPlayer(std::string name, bool bot) {
     if (phase_ != Phase::Lobby) return std::nullopt;
     std::optional<std::uint8_t> replaceSeat;
@@ -63,7 +63,7 @@ void GameSession::fillBots() {
     while (players_.size()<config_.playerLimit) addPlayer("SENTINEL "+std::to_string(players_.size()+1),true);
 }
 bool GameSession::setMode(PlayerId actor,unsigned teamSize) {
-    if (actor!=0 || phase_!=Phase::Lobby || (teamSize!=0 && teamSize!=2 && teamSize!=4)) return false;
+    if (actor!=0 || phase_!=Phase::Lobby || (teamSize!=0 && teamSize!=2)) return false;
     const unsigned limit=teamSize ? teamSize*2 : 2;
     if (std::ranges::count_if(players_,[](const auto& p){return !p.bot;})>limit) return false;
     std::erase_if(players_,[](const auto& p){return p.bot;});
@@ -117,8 +117,6 @@ Input GameSession::botInput(const Tank& tank) {
     }
     if (distance<desired*0.70f) move=-toward;
     else if (distance>desired*1.15f) move=toward;
-    for (const auto& ally : world_.tanks()) if (ally.id!=tank.id && ally.alive() && ally.team==tank.team && std::abs(ally.position.x-tank.position.x)<120)
-        move=tank.position.x<ally.position.x ? -1.f : 1.f;
     if (tank.position.x<50 && move<0) move=1;
     if (tank.position.x>config_.worldWidth-50 && move>0) move=-1;
     const float spread=std::sin(time*2.7f+tank.id*3.1f)*22+std::sin(time*0.91f+tank.id)*12;

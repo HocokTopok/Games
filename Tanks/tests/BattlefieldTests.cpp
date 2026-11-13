@@ -51,6 +51,10 @@ void maps() {
         for (float xx=0;xx<c.worldWidth;xx+=13) require(near(map->height(xx),copy->height(xx),0.001f),"snapshot reconstructs exact surface");
         if (id==2) {
             auto original=tw::MapFactory::create(c);
+            for (float xx=0;xx<=c.worldWidth;xx+=4) {
+                require(original->height(xx)/c.worldHeight*900<750,"ravine floor remains above the bottom panel with clearance");
+                require(original->bedrock(xx)/c.worldHeight*900<753,"even fully eroded ravine stays above the panel");
+            }
             require(original->height(0)<original->height(x)-700 && original->height(c.worldWidth)<original->height(x)-700,"high edges flank the deep ravine");
             bool mud=false,firm=false;
             for (float xx=c.worldWidth*0.3f;xx<c.worldWidth*0.7f;xx+=10) { mud|=original->movementScale(xx)<1; firm|=original->movementScale(xx)==1; }
@@ -107,7 +111,7 @@ void weapons() {
         world.reset(players(kind,tw::WeaponKind::Mortar)); require(surface==world.snapshot().terrain,"rematch restores terrain");
     }
     tank.hp=500; tank.maxHp=1000; tank.shieldRemaining=10;
-    tw::Physics::damage(tank,9999); tw::Physics::crush(tank); require(tank.hp==500,"shield blocks shots and crush damage");
+    tw::Physics::damage(tank,9999); require(tank.hp==500,"shield blocks shots");
     tank.shieldRemaining=0; tw::Physics::damage(tank,80); require(tank.hp==420,"damage returns after shield expires");
     tank.damageRemaining=15;
     require(tw::Cannon::fire(tank,c.weapon,2).damageScale==1.5f,"damage perk is captured when projectile is fired");

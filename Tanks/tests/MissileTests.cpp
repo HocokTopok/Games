@@ -96,7 +96,7 @@ void profiles() {
     c=tw::MapFactory::preset({},2); auto ravine=tw::MapFactory::create(c);
     require(c.worldWidth==2600 && c.worldHeight==1462.5f,"ravine dimensions unchanged");
     const float middle=ravine->height(1300);
-    require(middle-ravine->height(0)>850 && middle-ravine->height(2600)>850,"ravine descends deeply from both edges");
+    require(middle-ravine->height(0)>750 && middle-ravine->height(2600)>750,"ravine descends deeply from both edges");
     require(std::abs(ravine->height(800)-ravine->height(1800))>15,"ravine walls are asymmetric");
     c=tw::MapFactory::preset({},3); auto city=tw::MapFactory::create(c);
     require(c.worldWidth==3200 && c.worldHeight==1800,"city dimensions unchanged");

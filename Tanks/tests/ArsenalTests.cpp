@@ -94,7 +94,7 @@ void pendingStrikeVictory(bool draw) {
     if (draw) owner.hp=200;
     game.setInput(0,{0,tw::pi/2,0,true}); game.step();
     require(game.snapshot().skyStrikes.size()==1,"session contains the pending orbital strike");
-    tw::Physics::crush(const_cast<tw::Tank&>(game.world().tanks()[1]));
+    tw::Physics::damage(const_cast<tw::Tank&>(game.world().tanks()[1]),c.titanHealth);
     game.setInput(0,{0,tw::pi/2,0,false}); game.step();
     require(game.snapshot().phase==tw::Phase::Playing,"killing the opponent cannot skip a pending sky strike");
     int steps=0;

@@ -5,6 +5,39 @@
 
 namespace {
 void require(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
+void contact() {
+    for (bool teams : {false,true}) {
+        tw::Config c; c.hillHeight=0; c.titanMode=true; c.teams=teams; c.playerLimit=teams ? 4 : 2; c.tankSpeed=120;
+        std::vector<tw::Player> players;
+        for (unsigned i=0;i<c.playerLimit;++i) {
+            tw::Player p{static_cast<tw::PlayerId>(i),static_cast<std::uint8_t>(i),static_cast<std::uint8_t>(teams ? i/2 : i),true,true,false,"PILOT"};
+            p.seat=static_cast<std::uint8_t>(i); players.push_back(p);
+        }
+        for (unsigned target=1;target<c.playerLimit;++target) {
+            tw::World world(c); world.reset(players);
+            auto& tanks=const_cast<std::vector<tw::Tank>&>(world.tanks());
+            tanks[0].position={600,c.groundHeight-c.tankHalfHeight};
+            tanks[target].position={700,c.groundHeight-c.tankHalfHeight};
+            std::array<tw::Input,tw::maxPlayers> input{}; input[0].move=1;
+            for (int i=0;i<180;++i) world.step(input);
+            require(tanks[0].position.x>tanks[target].position.x+60,"ground tank drives through both allies and enemies");
+            input[0].move=-1;
+            for (int i=0;i<180;++i) world.step(input);
+            require(tanks[0].position.x<tanks[target].position.x-60,"ground tank can pass back through in the other direction");
+            tanks[0].position={600,c.groundHeight-c.tankHalfHeight};
+            tanks[target].position={760,c.groundHeight-c.tankHalfHeight};
+            input[0].move=1; input[target].move=-1;
+            for (int i=0;i<180;++i) world.step(input);
+            require(tanks[0].position.x>tanks[target].position.x+100,"opposing movement passes through without blocking");
+            tanks[0].position={tanks[target].position.x,tanks[target].position.y-100}; tanks[0].verticalVelocity=0; tanks[0].canFly=true;
+            input={};
+            for (int i=0;i<180;++i) world.step(input);
+            require(std::abs(tanks[0].position.y-tanks[target].position.y)<0.01f && tanks[0].verticalVelocity==0,"falling tank passes through and lands on terrain without bouncing");
+            for (const auto& t : tanks) require(t.hp==c.titanHealth,"contact never deals damage");
+            require(world.snapshot().events.empty(),"contact produces no impact or destruction event");
+        }
+    }
+}
 void run() {
     tw::Config config;
     const std::vector<tw::Player> players{{0,0,0,true,true,false,"HOST"},{1,1,1,true,true,false,"GUEST"}};
@@ -66,7 +99,7 @@ void run() {
     for (int i=0;i<120;++i) world.step(input);
     require(world.tanks()[1].position.y<floor-250,"holding Up sustains flight");
     for (int i=0;i<120*4;++i) world.step(input);
-    require(world.tanks()[1].position.y>=42.f,"flight respects the world ceiling outside the separate HUD");
+    require(world.tanks()[1].position.y>=42.f,"flight respects the world ceiling");
     input[1].lift=-1;
     for (int i=0;i<120*3;++i) world.step(input);
     require(std::abs(world.tanks()[1].position.y-floor)<0.01f && world.tanks()[1].verticalVelocity==0,"Down descends and lands without sinking");
@@ -78,6 +111,6 @@ void run() {
 }
 }
 int main() {
-    try { run(); std::cout<<"Orb, mortar and flight mechanics passed\n"; return 0; }
+    try { contact(); run(); std::cout<<"Orb, mortar and flight mechanics passed\n"; return 0; }
     catch (const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; }
 }

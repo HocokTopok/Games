@@ -146,7 +146,7 @@ void World::updateFire(float dt) {
 void World::summonSkyStrike(const Hit& hit, const Projectile& p) {
     const float x=std::clamp(hit.position.x,0.f,config_.worldWidth);
     const Vec2 position{x,map_->height(x)};
-    // Bound persistent effects even in eight-player rooms.
+    // Bound persistent effects during sustained team fire.
     if (skyStrikes_.size()>=16) skyStrikes_.erase(skyStrikes_.begin());
     skyStrikes_.push_back({nextProjectile_++,p.owner,position,0,config_.weapon.skyRadius,p.damageScale});
     emit(EventKind::FlareImpact,position,p.owner,config_.weapon.skyRadius);
@@ -190,13 +190,7 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         const auto previousPosition = tank.position;
         tank.inMud=map_->movementScale(tank.position.x)<1 && tank.position.y>=map_->height(tank.position.x)-config_.tankHalfHeight-1;
         const float movement = std::clamp(in.move, -1.f, 1.f) * config_.tankSpeed * dt * (tank.inMud ? map_->movementScale(tank.position.x) : 1.f);
-        float x = std::clamp(tank.position.x + movement, config_.tankHalfWidth + 8, config_.worldWidth - config_.tankHalfWidth - 8);
-        for (const auto& other : tanks_) {
-            if (other.id == tank.id || !other.alive()) continue;
-            if (std::abs(tank.position.y - other.position.y) >= config_.tankHalfHeight * 2 + 2) continue;
-            if (std::abs(x - other.position.x) < config_.tankHalfWidth * 2 + 2 &&
-                std::abs(x-other.position.x)<std::abs(tank.position.x-other.position.x)) x=tank.position.x;
-        }
+        const float x = std::clamp(tank.position.x + movement, config_.tankHalfWidth + 8, config_.worldWidth - config_.tankHalfWidth - 8);
         tank.track += (x - tank.position.x) / 8.f;
         const float floor = map_->height(x) - config_.tankHalfHeight;
         {
@@ -211,21 +205,9 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
                                            + std::max(0.f, -lift) * config_.flightAcceleration;
                 tank.verticalVelocity = std::clamp(tank.verticalVelocity + acceleration * dt, -config_.flightSpeed, config_.descentSpeed);
                 tank.position.y += tank.verticalVelocity * dt;
-                // HUD has its own frame; the flight ceiling belongs to world geometry.
                 const float ceiling = 42.f;
                 if (tank.position.y < ceiling) { tank.position.y = ceiling; tank.verticalVelocity = std::max(0.f, tank.verticalVelocity); }
                 if (tank.position.y >= floor) { tank.position.y = floor; tank.verticalVelocity = 0; }
-                for (auto& other : tanks_) {
-                    if (other.id == tank.id || !other.alive() || std::abs(x - other.position.x) >= config_.tankHalfWidth * 2 + 2) continue;
-                    const float top = other.position.y - config_.tankHalfHeight * 2 - 2;
-                    if (previousPosition.y <= top && tank.position.y >= top) {
-                        Physics::crush(other);
-                        if (!other.alive()) emit(EventKind::Destroyed,other.position,other.id);
-                        emit(EventKind::Impact,{x,top+config_.tankHalfHeight},other.id);
-                        tank.position.y = top;
-                        tank.verticalVelocity = -config_.jumpSpeed*0.4f;
-                    }
-                }
             }
             tank.position.x = x;
             tank.bodyAngle = approachAngle(tank.bodyAngle, tank.position.y >= floor - 0.5f ? map_->slope(x) : 0.f, dt * 4);
@@ -314,7 +296,9 @@ void World::updateSupplies(float dt) {
         const float direction=planeDirection_; planeDirection_=-planeDirection_;
         float highest=config_.worldHeight;
         for (float x=0;x<=config_.worldWidth;x+=4) highest=std::min(highest,map_->height(x));
-        plane_={true,{direction>0 ? -150.f : config_.worldWidth+150.f,std::max(58.f,highest-96.f)},
+        // Keep the route near the top at every map scale, with room above all peaks.
+        const float altitude=std::min(config_.worldHeight*0.07f,highest-96.f);
+        plane_={true,{direction>0 ? -150.f : config_.worldWidth+150.f,std::max(40.f,altitude)},
             config_.worldWidth*(0.25f+0.5f*(random()%10001)/10000.f),false};
         plane_.direction=direction;
     }

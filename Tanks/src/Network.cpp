@@ -332,7 +332,7 @@ bool readState(sf::Packet& p, Snapshot& s) {
         } else if (marker==rulesMagic && version==rulesVersion) {
             s.modernRules=true;
             p >> s.teamBattle >> s.roomSize;
-            if (!p || s.roomSize<2 || s.roomSize>maxPlayers || (s.teamBattle && s.roomSize!=4 && s.roomSize!=8)) return false;
+            if (!p || (s.teamBattle ? s.roomSize!=4 : s.roomSize!=2)) return false;
             std::array<bool,maxPlayers> occupied{};
             for (auto& player : s.players) {
                 p >> player.seat;
@@ -418,7 +418,7 @@ struct Server::Impl {
     std::atomic<bool> stopping{false};
     std::thread worker;
     explicit Impl(Config c, unsigned short port) : config(c), session(c) {
-        if (listener.listen(port) != Status::Done) throw std::runtime_error("Port is busy. Choose another port or close the other host.");
+        if (listener.listen(port) != Status::Done) throw std::runtime_error("Port unavailable.");
         listener.setBlocking(false);
         worker = std::thread([this] { run(); });
     }
@@ -443,7 +443,7 @@ struct Server::Impl {
                 peer.rules = marker == capabilityMagic && (capabilities & rulesCapability) != 0;
             }
             if (config.loadoutSelection && (!peer.battlefield || !peer.sky || !peer.missile || !peer.rules)) {
-                auto error=packet(Message::Error); error << std::string("Update both games to Tank Wars 1.6.0 for teams, destructible terrain and aircraft.");
+                auto error=packet(Message::Error); error << std::string("Incompatible game version.");
                 peer.channel.queue(std::move(error)); peer.channel.flush(); peer.channel.alive=false; return;
             }
             for (char& ch : name) if (ch < 32 || ch > 126) ch = '?';
@@ -562,7 +562,7 @@ bool Client::connect(const std::string& address, unsigned short port, const std:
     if (!ip) { impl_->error = "Invalid IP address."; return false; }
     auto channel = std::make_unique<Channel>();
     if (channel->socket->connect(*ip, port, sf::seconds(1.5f)) != Status::Done) {
-        impl_->error = "Could not connect. Check IP, port, and the host's firewall."; return false;
+        impl_->error = "Connection failed."; return false;
     }
     channel->socket->setBlocking(false); impl_->channel = std::move(channel);
     auto hello = packet(Message::Hello);
@@ -616,12 +616,12 @@ void Client::poll() {
                 }
             }
             if (valid && impl_->config.loadoutSelection && (!missileConfig || !rulesConfig)) {
-                impl_->error="Update the host to Tank Wars 1.6.0 for teams and the new battlefield rules."; valid=false;
+                impl_->error="Incompatible game version."; valid=false;
             }
         } else if (type == static_cast<std::uint8_t>(Message::State) && impl_->id != noPlayer) {
             Snapshot s; valid = readState(p, s);
             if (valid && impl_->detailedWeaponConfig && !s.detailedWeapons) {
-                impl_->error="Missing projectile graphics data. Restart both games using the same updated build.";
+                impl_->error="Incomplete graphics data.";
                 valid=false;
             }
             if (valid && impl_->config.loadoutSelection && !s.battlefieldData) valid=false;
@@ -651,7 +651,7 @@ void Client::poll() {
         if (!valid) { if (impl_->error.empty()) impl_->error = "Incompatible or invalid server message."; ch.alive = false; break; }
     }
     ch.flush();
-    if (!ch.alive && impl_->error.empty()) impl_->error = "Connection lost. Return to the menu to reconnect.";
+    if (!ch.alive && impl_->error.empty()) impl_->error = "Connection lost.";
 }
 void Client::sendInput(Input in) { auto p = packet(Message::Input); p << in.move << in.aim << in.powerDelta << in.fire << in.lift; impl_->queue(std::move(p)); }
 void Client::ready(bool value) { auto p = packet(Message::Ready); p << value; impl_->queue(std::move(p)); }

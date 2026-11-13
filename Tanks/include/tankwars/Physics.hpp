@@ -21,6 +21,5 @@ LaserTrace guidanceTrace(const Tank& tank, const Config& config, const Terrain& 
 void steerMissile(Projectile& projectile, Vec2 target, float dt, float turnRate);
 float missileDamage(Vec2 explosion, const Tank& tank, bool direct, const Config& config);
 void damage(Tank& tank, float amount, bool lethal = false);
-void crush(Tank& tank);
 }
 }

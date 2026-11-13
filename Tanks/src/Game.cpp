@@ -50,7 +50,7 @@ void Game::join() {
             std::size_t used{}; const auto number = std::stoul(address.substr(colon+1), &used);
             if (used != address.size() - colon - 1 || number == 0 || number > 65535) throw std::invalid_argument("port");
             port = static_cast<unsigned short>(number); address.resize(colon);
-        } catch (...) { status_ = "Use an address like 192.168.1.12:53000"; return; }
+        } catch (...) { status_ = "Invalid address."; return; }
     }
     client_ = std::make_unique<net::Client>();
     if (client_->connect(address,port,"PILOT 02")) { status_.clear(); screen_ = Screen::Lobby; autoReadySent_ = false; }
@@ -151,33 +151,25 @@ void Game::update(float dt) {
     if (clicked_ && screen_!=Screen::Playing) audio_.uiClick();
 }
 void Game::mainMenu(Vec2 mouse) {
-    renderer_.text("REAL-TIME ARTILLERY / VOL. 01",{100,105},20,Renderer::accent);
     renderer_.text("TANK",{90,150},132,Renderer::white);
     renderer_.text("WARS",{90,262},132,Renderer::white);
-    renderer_.text(config_.titanMode ? "Heavy armor. Unstoppable light." : "A quiet battlefield. A perfect shot.",{101,418},25,Renderer::muted);
-    if (renderer_.button({100,483},{390,74},"PLAY","Choose your weapon / explore four battlefields",mouse,clicked_,true)) { play(); return; }
-    if (renderer_.button({100,572},{185,62},"HOST","Create LAN room",mouse,clicked_)) { host(); return; }
-    if (renderer_.button({305,572},{185,62},"JOIN","Connect by IP",mouse,clicked_)) { screen_ = Screen::Join; status_.clear(); }
-    if (renderer_.button({100,650},{185,60},"SETTINGS","Tune your view",mouse,clicked_)) { settingsReturn_ = Screen::Main; screen_ = Screen::Settings; }
-    if (renderer_.button({305,650},{185,60},"EXIT","Until next time",mouse,clicked_)) window_.close();
-    renderer_.text("01 / NIGHTFALL BASIN",{1050,730},19,Renderer::accent,true);
-    renderer_.text("2-8 PILOTS     /     ONE BATTLEFIELD     /     NO TURNS",{1050,761},16,Renderer::muted,true);
-    renderer_.line({100,813},{1500,813},{43,65,80});
-    renderer_.text("LOCAL NETWORK. GLOBAL RIVALRY.",{100,836},17,Renderer::muted);
-    renderer_.text("BUILD " TANKWARS_VERSION,{1400,836},17,Renderer::muted,true);
+    if (renderer_.button({100,483},{390,74},"PLAY",mouse,clicked_,true)) { play(); return; }
+    if (renderer_.button({100,572},{185,62},"HOST",mouse,clicked_)) { host(); return; }
+    if (renderer_.button({305,572},{185,62},"JOIN",mouse,clicked_)) { screen_ = Screen::Join; status_.clear(); }
+    if (renderer_.button({100,650},{185,60},"SETTINGS",mouse,clicked_)) { settingsReturn_ = Screen::Main; screen_ = Screen::Settings; }
+    if (renderer_.button({305,650},{185,60},"EXIT",mouse,clicked_)) window_.close();
+    renderer_.text("BUILD " TANKWARS_VERSION,{1494,866},14,Renderer::muted,true);
     if (!status_.empty()) renderer_.text(status_,{100,755},19,Renderer::playerColor(1));
 }
 void Game::joinMenu(Vec2 mouse) {
     renderer_.dim(0.6f);
     renderer_.box({440,202},{720,462},{10,21,35,250},{47,71,88});
-    renderer_.text("FIND YOUR RIVAL",{800,235},46,Renderer::white,true);
-    renderer_.text("Enter the host's local IP. Use 127.0.0.1 on this Mac.",{800,302},21,Renderer::muted,true);
+    renderer_.text("JOIN",{800,235},46,Renderer::white,true);
     renderer_.text("IP ADDRESS : PORT",{490,359},17,Renderer::accent);
     renderer_.box({490,394},{620,64},{7,15,27},Renderer::accent);
     renderer_.text(address_ + (static_cast<int>(time_*2)%2 ? "_" : ""),{510,404},30,Renderer::white);
-    renderer_.text("Default port: " + std::to_string(config_.port),{490,471},18,Renderer::muted);
-    if (renderer_.button({490,538},{295,66},"CONNECT","ENTER",mouse,clicked_,true)) join();
-    if (renderer_.button({815,538},{295,66},"BACK","ESC",mouse,clicked_)) leave();
+    if (renderer_.button({490,538},{295,66},"CONNECT",mouse,clicked_,true)) join();
+    if (renderer_.button({815,538},{295,66},"BACK",mouse,clicked_)) leave();
     if (!status_.empty()) renderer_.text(status_,{800,686},20,Renderer::playerColor(1),true);
 }
 void Game::lobby(Vec2 mouse) {
@@ -190,21 +182,20 @@ void Game::lobby(Vec2 mouse) {
     std::optional<std::uint8_t> dropSeat;
     const bool allReady=state_.players.size()>=2 && std::ranges::all_of(state_.players,[](const auto& p){return p.ready && p.weaponChosen;});
     const bool chooseMap=c.loadoutSelection && allReady;
-    renderer_.text("ASSEMBLE YOUR SQUAD",{90,42},44,Renderer::white);
+    renderer_.text("LOBBY",{90,42},44,Renderer::white);
     const auto endpoint=solo_ ? "SOLO / SENTINELS" : (server_ ? localAddress_+":"+std::to_string(server_->port()) : address_);
     renderer_.text(endpoint,{94,105},20,Renderer::accent);
-    for (unsigned i=0;i<3;++i) {
-        const unsigned size=i==0 ? 0 : (i==1 ? 2 : 4);
+    for (unsigned i=0;i<2;++i) {
+        const unsigned size=i==0 ? 0 : 2;
         const bool selected=size ? c.teams && c.playerLimit==size*2 : !c.teams;
-        if (renderer_.button({810.f+i*236,60},{220,66},i==0 ? "1 VS 1" : (i==1 ? "2 VS 2" : "4 VS 4"),"3 min / bots fill seats",mouse,clicked_,selected,local==0)) {
+        if (renderer_.button({1046.f+i*236,60},{220,66},i==0 ? "1 VS 1" : "2 VS 2",mouse,clicked_,selected,local==0)) {
             if (client_) client_->mode(static_cast<std::uint8_t>(size)); else solo_->setMode(local,size);
         }
     }
-    renderer_.text(local==0 ? "Drag any pilot to a seat. Click a bot's weapon to change its loadout." : "Drag your pilot to change team or starting position.",{94,151},19,Renderer::muted);
     const unsigned perSide=c.teams ? c.playerLimit/2 : (c.playerLimit+1)/2;
     for (unsigned side=0;side<2;++side) {
         const float x=90+side*720.f;
-        renderer_.text(c.teams ? "TEAM "+std::to_string(side+1)+" / FRIENDLY FIRE ON" : (side==0 ? "LEFT SIDE" : "RIGHT SIDE"),{x,183},19,Renderer::accent);
+        renderer_.text(c.teams ? "TEAM "+std::to_string(side+1) : (side==0 ? "LEFT SIDE" : "RIGHT SIDE"),{x,183},19,Renderer::accent);
         for (unsigned row=0;row<perSide;++row) {
             const auto seat=static_cast<std::uint8_t>(c.teams ? side*perSide+row : row*2+side);
             if (seat>=c.playerLimit) continue;
@@ -217,14 +208,14 @@ void Game::lobby(Vec2 mouse) {
             if (occupant!=state_.players.end()) {
                 const auto& p=*occupant;
                 renderer_.text(std::to_string(row+1)+"  "+p.name+(p.id==local ? " / YOU" : (p.bot ? " / BOT" : "")),{x+14,y+5},19,Renderer::playerColor(p.color));
-                renderer_.text(p.weaponChosen ? weaponName(p.weapon) : "CHOOSE WEAPON",{x+350,y+8},16,Renderer::white);
+                renderer_.text(p.weaponChosen ? weaponName(p.weapon) : "--",{x+350,y+8},16,Renderer::white);
                 renderer_.text(p.ready ? "READY" : "PREPARING",{x+584,y+9},15,p.ready ? Renderer::accent : Renderer::muted);
                 if (pressed && local==0 && p.bot && press.x>x+340 && press.x<x+570) {
                     auto found=std::ranges::find(selectableWeapons,p.weapon);
                     const auto index=found==selectableWeapons.end() ? 0 : (found-selectableWeapons.begin()+1)%selectableWeapons.size();
                     if (client_) client_->botWeapon(p.id,selectableWeapons[index]); else solo_->setBotWeapon(local,p.id,selectableWeapons[index]);
                 } else if (pressed && (local==0 || p.id==local)) draggedPlayer_=p.id;
-            } else renderer_.text("OPEN SEAT / INVITE A PILOT",{x+14,y+7},18,Renderer::muted);
+            } else renderer_.text("OPEN",{x+14,y+7},18,Renderer::muted);
         }
     }
     if (released_) {
@@ -233,29 +224,24 @@ void Game::lobby(Vec2 mouse) {
         }
         draggedPlayer_=noPlayer;
     }
-    if (draggedPlayer_!=noPlayer) renderer_.text("MOVE TO SEAT",mouse+Vec2{12,-25},19,Renderer::accent);
-    renderer_.text(chooseMap ? (local==0 ? "ALL PILOTS READY / SELECT BATTLEFIELD" : "WAITING FOR HOST TO SELECT BATTLEFIELD") : "CHOOSE YOUR WEAPON / CONFIRM WHEN READY",{94,419},21,Renderer::accent);
+    renderer_.text(chooseMap ? "BATTLEFIELD" : "WEAPON",{94,419},21,Renderer::accent);
     if (!chooseMap) {
-        constexpr const char* details[]{"Fire pools / rapid fire", "High arc / 1.5 sec reload", "One active missile", "3 bounces / +10 damage", "12 sec / orbital strike"};
-        constexpr const char* notes[]{"2.67 sec ground fire", "150 damage / 110 m blast", "120 damage / 20 sec life", "Growing orb / 30 to 60 DMG", "Flattens and erodes terrain"};
         for (std::size_t i=0;i<selectableWeapons.size();++i) {
             const float x=90+i*290.f; const auto kind=selectableWeapons[i];
             const bool selected=me && me->weaponChosen && me->weapon==kind;
             renderer_.box({x,458},{272,181},{11,24,39,245},selected ? Renderer::accent : sf::Color{49,71,86});
             renderer_.weaponPreview(kind,{x+136,503},time_);
-            renderer_.text(notes[i],{x+136,610},16,Renderer::muted,true);
-            if (renderer_.button({x+8,540},{256,66},weaponName(kind),details[i],mouse,clicked_,selected,me!=nullptr)) {
+            if (renderer_.button({x+8,540},{256,66},weaponName(kind),mouse,clicked_,selected,me!=nullptr)) {
                 if (client_) client_->weapon(kind); else solo_->setWeapon(local,kind);
             }
         }
     } else for (std::uint8_t i=0;i<4;++i) {
         const float x=90+i*363.f;
         renderer_.mapPreview(i,{x,458},{343,127});
-        if (renderer_.button({x,597},{343,77},MapFactory::name(i),MapFactory::description(i),mouse,clicked_,i==0,local==0)) {
+        if (renderer_.button({x,597},{343,77},MapFactory::name(i),mouse,clicked_,i==0,local==0)) {
             if (client_) client_->map(i); else solo_->setMap(local,i);
         }
     }
-    renderer_.text("YOUR COLOR",{94,686},17,Renderer::muted);
     for (std::uint8_t i=0;i<maxPlayers;++i) {
         const Vec2 center{113.f+i*53,736};
         const bool taken=std::ranges::any_of(state_.players,[&](const auto& p){return p.id!=local && p.color==i;});
@@ -265,44 +251,40 @@ void Game::lobby(Vec2 mouse) {
             if (client_) client_->color(i); else solo_->setColor(local,i);
         }
     }
-    if (renderer_.button({1020,705},{480,74},me && me->ready ? "CHANGE LOADOUT" : "CONFIRM WEAPON","Bots are ready / humans confirm independently",mouse,clicked_,true,me && (me->weaponChosen || !c.loadoutSelection))) {
+    if (renderer_.button({1020,705},{480,74},me && me->ready ? "CHANGE LOADOUT" : "CONFIRM WEAPON",mouse,clicked_,true,me && (me->weaponChosen || !c.loadoutSelection))) {
         if (client_) client_->ready(!me->ready); else solo_->setReady(local,!me->ready);
     }
-    if (renderer_.button({90,811},{255,61},solo_ ? "MAIN MENU" : "LEAVE ROOM","ESC",mouse,clicked_)) leave();
-    renderer_.text("FIVE WEAPONS / FOUR MAPS / THREE MINUTES",{1030,834},18,Renderer::muted,true);
+    if (renderer_.button({90,811},{255,61},solo_ ? "MAIN MENU" : "LEAVE ROOM",mouse,clicked_)) leave();
 }
 void Game::settingsMenu(Vec2 mouse) {
     renderer_.dim(0.65f);
     renderer_.box({430,65},{740,750},{10,21,35,250},{46,69,86});
-    renderer_.text("MAKE IT YOURS",{800,91},44,Renderer::white,true);
-    auto toggle = [&](float y, const std::string& title, const std::string& detail, bool& value) {
-        renderer_.text(title,{480,y},25,Renderer::white); renderer_.text(detail,{480,y+31},17,Renderer::muted);
-        if (renderer_.button({950,y},{170,61},value ? "ON" : "OFF","",mouse,clicked_,value)) value = !value;
+    renderer_.text("SETTINGS",{800,91},44,Renderer::white,true);
+    auto toggle = [&](float y, const std::string& title, bool& value) {
+        renderer_.text(title,{480,y+12},25,Renderer::white);
+        if (renderer_.button({950,y},{170,61},value ? "ON" : "OFF",mouse,clicked_,value)) value = !value;
         renderer_.line({480,y+79},{1120,y+79},{35,53,71});
     };
-    toggle(170,"CAMERA SHAKE","A little impact with every explosion",renderer_.settings.shake);
-    toggle(255,"PARTICLES","Neon sparks and fragments",renderer_.settings.particles);
-    toggle(340,"AIMING GUIDE","Your trajectory stays on your screen",renderer_.settings.trajectory);
+    toggle(170,"CAMERA SHAKE",renderer_.settings.shake);
+    toggle(255,"PARTICLES",renderer_.settings.particles);
+    toggle(340,"AIMING GUIDE",renderer_.settings.trajectory);
     renderer_.text("FRAME LIMIT",{480,448},25,Renderer::white);
-    if (renderer_.button({950,437},{170,61},renderer_.settings.frameLimit ? std::to_string(renderer_.settings.frameLimit) + " FPS" : "UNLIMITED","",mouse,clicked_)) {
+    if (renderer_.button({950,437},{170,61},renderer_.settings.frameLimit ? std::to_string(renderer_.settings.frameLimit) + " FPS" : "UNLIMITED",mouse,clicked_)) {
         auto& limit = renderer_.settings.frameLimit; limit = limit == 60 ? 120 : (limit == 120 ? 0 : 60); window_.setFramerateLimit(limit);
     }
     const auto volume=[&](float y,const std::string& title,float level,bool music) {
         renderer_.text(title,{480,y+9},25,Renderer::white);
-        if (renderer_.button({820,y},{70,57},"-","",mouse,clicked_)) {
+        if (renderer_.button({820,y},{70,57},"-",mouse,clicked_)) {
             if (music) audio_.setMusicVolume(level-10); else audio_.setEffectsVolume(level-10);
         }
         renderer_.text(std::to_string(static_cast<int>(level))+"%",{963,y+10},25,Renderer::accent,true);
-        if (renderer_.button({1050,y},{70,57},"+","",mouse,clicked_)) {
+        if (renderer_.button({1050,y},{70,57},"+",mouse,clicked_)) {
             if (music) audio_.setMusicVolume(level+10); else audio_.setEffectsVolume(level+10);
         }
     };
     volume(518,"SOUND EFFECTS",audio_.effectsVolume(),false);
     volume(591,"MUSIC",audio_.musicVolume(),true);
-    auto track=audio_.trackName(); if (track.size()>54) track=track.substr(0,51)+"...";
-    renderer_.text(track,{480,661},16,Renderer::muted);
-    renderer_.text(audio_.muted() ? "M  UNMUTE     F7  NEXT TRACK" : "M  MUTE     F7  NEXT TRACK",{480,688},15,Renderer::accent);
-    if (renderer_.button({480,725},{640,61},"BACK","",mouse,clicked_,true)) screen_ = settingsReturn_;
+    if (renderer_.button({480,725},{640,61},"BACK",mouse,clicked_,true)) screen_ = settingsReturn_;
 }
 void Game::matchMenu(Vec2 mouse) {
     if (client_ && !client_->connected()) return;
@@ -311,26 +293,21 @@ void Game::matchMenu(Vec2 mouse) {
         const auto* winner = findTank(state_,state_.winner);
         const auto color = winner ? Renderer::playerColor(winner->color) : Renderer::accent;
         renderer_.box({440,234},{720,438},{11,23,37,245},{49,75,91}); renderer_.box({440,234},{720,3},color);
-        renderer_.text("BATTLE / COMPLETE",{800,272},20,color,true);
         const auto* you = findTank(state_,client_ ? client_->id() : 0);
         const bool won = winner && you && winner->team == you->team;
-        renderer_.text(winner ? (won ? "VICTORY" : "WELL FOUGHT") : "DRAW",{800,320},winner ? 76 : 46,Renderer::white,true);
-        std::string name;
-        for (const auto& p : state_.players) if (p.id == state_.winner) name = p.name;
-        renderer_.text(winner ? (activeConfig().teams ? "TEAM " + std::to_string(winner->team+1) + " WINS" : name + " TAKES THE FIELD") : (state_.elapsed>=matchDuration ? "TIME LIMIT / THREE MINUTES" : "NO TANK LEFT STANDING"),{800,425},24,color,true);
+        renderer_.text(winner ? (won ? "VICTORY" : "DEFEAT") : "DRAW",{800,320},winner ? 76 : 46,Renderer::white,true);
         if (!client_ || client_->id() == 0) {
-            if (renderer_.button({490,510},{295,76},"PLAY AGAIN",client_ ? "Return to the room" : "A fresh duel",mouse,clicked_,true)) {
+            if (renderer_.button({490,510},{295,76},"PLAY AGAIN",mouse,clicked_,true)) {
                 if (client_) client_->rematch(); else play(); return;
             }
-        } else renderer_.text("WAITING FOR HOST'S REMATCH",{630,534},21,Renderer::muted,true);
-        if (renderer_.button({815,510},{295,76},"MAIN MENU","Leave the battlefield",mouse,clicked_)) leave();
+        } else renderer_.text("WAITING",{630,534},21,Renderer::muted,true);
+        if (renderer_.button({815,510},{295,76},"MAIN MENU",mouse,clicked_)) leave();
     } else if (paused_) {
         renderer_.dim(0.7f); renderer_.box({540,220},{520,484},{10,21,35,245},{47,70,87});
         renderer_.text(client_ ? "FIELD MENU" : "PAUSED",{800,255},60,Renderer::white,true);
-        renderer_.text(client_ ? "The LAN battle continues while this menu is open." : "Take your time. Line up the next shot.",{800,337},19,Renderer::muted,true);
-        if (renderer_.button({590,395},{420,66},"RESUME","ESC",mouse,clicked_,true)) paused_ = false;
-        if (renderer_.button({590,479},{420,66},"SETTINGS","Adjust your view",mouse,clicked_)) { settingsReturn_ = Screen::Playing; screen_ = Screen::Settings; }
-        if (renderer_.button({590,563},{420,66},"MAIN MENU","Leave the battlefield",mouse,clicked_)) leave();
+        if (renderer_.button({590,395},{420,66},"RESUME",mouse,clicked_,true)) paused_ = false;
+        if (renderer_.button({590,479},{420,66},"SETTINGS",mouse,clicked_)) { settingsReturn_ = Screen::Playing; screen_ = Screen::Settings; }
+        if (renderer_.button({590,563},{420,66},"MAIN MENU",mouse,clicked_)) leave();
     }
 }
 void Game::draw() {
@@ -357,7 +334,7 @@ void Game::draw() {
             }
         }
         renderer_.battle(activeConfig(),visual,client_ ? client_->id() : 0,renderer_.worldMouse(pointerPixel_),!paused_ && window_.hasFocus());
-        renderer_.hud(activeConfig(),state_,client_ ? client_->id() : 0,client_ != nullptr);
+        renderer_.hud(activeConfig(),state_,client_ ? client_->id() : 0);
         matchMenu(mouse); break;
     }
     case Screen::Settings: settingsMenu(mouse); break;
@@ -365,7 +342,7 @@ void Game::draw() {
     if (client_ && !client_->connected()) {
         renderer_.dim(0.85f); renderer_.text("SIGNAL LOST",{800,320},64,Renderer::white,true);
         renderer_.text(client_->error(),{800,420},24,Renderer::muted,true);
-        if (renderer_.button({600,500},{400,75},"MAIN MENU","Reconnect from the menu",mouse,clicked_,true)) leave();
+        if (renderer_.button({600,500},{400,75},"MAIN MENU",mouse,clicked_,true)) leave();
     }
     if (showFps_) {
         renderer_.text(std::to_string(static_cast<int>(fps_)) + " FPS / " TANKWARS_VERSION,{1450,4},16,Renderer::accent,true);

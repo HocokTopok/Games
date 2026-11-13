@@ -17,12 +17,12 @@ public:
     void battle(const Config& config, const Snapshot& state, PlayerId local, Vec2 mouse, bool cursor);
     void weaponPreview(WeaponKind kind, Vec2 center, float time);
     void mapPreview(std::uint8_t id, Vec2 position, Vec2 size);
-    void hud(const Config& config, const Snapshot& state, PlayerId local, bool network);
+    void hud(const Config& config, const Snapshot& state, PlayerId local);
     void text(const std::string& value, Vec2 position, unsigned size, sf::Color color, bool centered = false);
     void box(Vec2 position, Vec2 size, sf::Color fill, sf::Color outline = sf::Color::Transparent);
     void line(Vec2 from, Vec2 to, sf::Color color, float thickness = 1);
     void circle(Vec2 center, float radius, sf::Color fill, sf::Color outline = sf::Color::Transparent, float thickness = 1);
-    bool button(Vec2 position, Vec2 size, const std::string& label, const std::string& detail,
+    bool button(Vec2 position, Vec2 size, const std::string& label,
                 Vec2 mouse, bool clicked, bool primary = false, bool enabled = true);
     void dim(float opacity = 0.75f);
     Vec2 uiMouse(sf::Vector2i pixel) const;

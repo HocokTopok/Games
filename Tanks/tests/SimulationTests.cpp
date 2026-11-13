@@ -62,7 +62,10 @@ void run() {
     players[1].seat=1; friendly.reset(players); std::array<tw::Input,tw::maxPlayers> inputs{};
     inputs[0]={1,0,0,false}; inputs[1]={-1,-tw::pi,0,false};
     for (int i=0;i<1100;++i) friendly.step(inputs);
-    check(friendly.tanks()[1].position.x-friendly.tanks()[0].position.x>=c.tankHalfWidth*2,"tanks cannot overlap");
+    check(friendly.tanks()[0].position.x>friendly.tanks()[1].position.x+c.tankHalfWidth*2,"tanks drive through one another");
+    auto& fixtures=const_cast<std::vector<tw::Tank>&>(friendly.tanks());
+    fixtures[0].position={600,friendly.map().height(600)-c.tankHalfHeight};
+    fixtures[1].position={640,friendly.map().height(640)-c.tankHalfHeight};
     inputs[0]={0,tw::pi/2,0,false}; inputs[1]={0,-tw::pi,0,false};
     for (int i=0;i<120;++i) friendly.step(inputs);
     inputs[0].fire=true; friendly.step(inputs);

@@ -190,5 +190,4 @@ void damage(Tank& tank, float amount, bool lethal) {
     if (!tank.alive() || tank.shieldRemaining > 0) return;
     tank.hp = lethal ? 0.f : std::max(0.f,tank.hp-std::max(0.f,amount));
 }
-void crush(Tank& tank) { damage(tank,tank.hp,true); }
 }
