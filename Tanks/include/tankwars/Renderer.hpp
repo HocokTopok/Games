@@ -34,6 +34,8 @@ public:
 private:
     void tank(const Tank& tank, const Config& config, float scale = 1);
     void decorations(const Config& config, const Terrain& map, float time);
+    void celestial(const Config& config);
+    void foregroundFog(const Config& config, const Terrain& map, float time);
     void supplies(const Config& config, const Snapshot& state);
     void perkIcon(PickupKind kind, Vec2 position, float size, sf::Color color, float rotation = 0);
     void terrain(const Config& config, const Terrain& map);

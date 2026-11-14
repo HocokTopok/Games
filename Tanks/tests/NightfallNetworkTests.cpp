@@ -64,24 +64,24 @@ void run() {
         auto state=world.snapshot(); state.players=sa.players; state.phase=tw::Phase::Playing; state.teamBattle=true;
         state.roomSize=4; state.elapsed=36;
         ra.resetEffects(); render(ra,ia,config,state);
-        require(ia.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/("tankwars-1.6.1-map-"+std::to_string(mapId)+".png")),"save uniform HUD on every map");
+        require(ia.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/("tankwars-1.7.0-map-"+std::to_string(mapId)+".png")),"save uniform HUD on every map");
         std::array<tw::Input,tw::maxPlayers> idle{};
         for (int tick=0;tick<120*32;++tick) world.step(idle);
         auto flight=world.snapshot(); flight.players=sa.players; flight.phase=tw::Phase::Playing; flight.teamBattle=true; flight.roomSize=4;
         ra.resetEffects(); render(ra,ia,config,flight);
-        require(ia.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/("tankwars-1.6.1-plane-map-"+std::to_string(mapId)+".png")),"save aircraft near top edge on every map");
+        require(ia.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/("tankwars-1.7.0-plane-map-"+std::to_string(mapId)+".png")),"save aircraft near top edge on every map");
         if (mapId==2) {
             auto& surface=const_cast<tw::Terrain&>(world.map());
             surface.erodeColumn(config.worldWidth/2,config.worldWidth/4,config.worldHeight);
             state.terrain=surface.samples(); render(ra,ia,config,state);
-            require(ia.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.6.1-vitebsk-eroded.png"),"save ravine after full erosion");
+            require(ia.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.7.0-vitebsk-eroded.png"),"save ravine after full erosion");
         }
         if (mapId==3) {
             state.events={{9000,tw::EventKind::MortarImpact,{1600,world.map().height(1600)},0,110,1}};
             ra.observe(state);
             for (int frame=0;frame<3;++frame) {
                 ra.update(frame==0 ? 0.22f : 0.55f); render(ra,ia,config,state);
-                require(ia.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/("tankwars-1.6.1-blast-"+std::to_string(frame)+".png")),"save dense blast phases");
+                require(ia.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/("tankwars-1.7.0-blast-"+std::to_string(frame)+".png")),"save dense blast phases");
             }
         }
     }

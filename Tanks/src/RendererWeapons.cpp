@@ -184,7 +184,7 @@ void Renderer::skyStrikes(const Config& c,const Snapshot& state) {
     }
 }
 void Renderer::addWeaponEffect(const GameEvent& e) {
-    const bool mortar=e.kind==EventKind::MortarImpact || e.kind==EventKind::PlaneCrash, bounce=e.kind==EventKind::Ricochet;
+    const bool mortar=e.kind==EventKind::MortarImpact || e.kind==EventKind::PlaneCrash || e.kind==EventKind::BombImpact, bounce=e.kind==EventKind::Ricochet;
     weaponEffects_.push_back({e.position,e.kind,0,bounce ? 0.55f : (mortar ? 3.1f+0.4f*variation(e.id,71) : 1.35f),e.radius,e.intensity,e.id,e.normal});
     shake_=std::max(shake_,bounce ? 1.4f : (mortar ? 5.2f : 2+3*e.intensity));
     if (!settings.particles) return;
@@ -204,7 +204,7 @@ void Renderer::weaponEffects() {
     for (const auto& e : weaponEffects_) {
         const float t=e.age/e.duration;
         const bool missile=e.kind==EventKind::MissileImpact;
-        const bool mortar=e.kind==EventKind::MortarImpact || e.kind==EventKind::PlaneCrash, bounce=e.kind==EventKind::Ricochet;
+        const bool mortar=e.kind==EventKind::MortarImpact || e.kind==EventKind::PlaneCrash || e.kind==EventKind::BombImpact, bounce=e.kind==EventKind::Ricochet;
         const sf::Color color=(mortar || missile) ? sf::Color{255,137,49} : sf::Color{156,130,255};
         const float radius=std::max(10.f,e.radius);
         const float expand=1-std::exp(-t*9);

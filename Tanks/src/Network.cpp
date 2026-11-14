@@ -5,6 +5,8 @@
 #include <deque>
 #include <thread>
 #include <stdexcept>
+#include <charconv>
+#include <string_view>
 #if defined(__APPLE__) || defined(__linux__)
 #include <arpa/inet.h>
 #include <ifaddrs.h>
@@ -19,7 +21,9 @@ enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, 
 constexpr std::uint32_t magic = 0x54414e4b;
 constexpr std::uint32_t extensionMagic = 0x54575831;
 constexpr std::uint16_t extensionVersion = 2;
-constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2, battlefieldCapability = 4, skyCapability = 8, missileCapability = 16, rulesCapability = 32;
+constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2, battlefieldCapability = 4, skyCapability = 8, missileCapability = 16, rulesCapability = 32, airRaidCapability = 64;
+constexpr std::uint32_t airRaidMagic=0x41495231;
+constexpr std::uint16_t airRaidVersion=1;
 constexpr std::uint32_t rulesMagic=0x52555731;
 constexpr std::uint16_t rulesVersion=1;
 constexpr std::uint32_t weaponMagic = 0x41525731;
@@ -161,6 +165,8 @@ void writeState(sf::Packet& p, const Snapshot& s, bool nativeHealth) {
     for (const auto& player : s.players) p << player.seat;
     for (const auto& tank : s.tanks) p << tank.velocity;
     p << s.plane.hp << s.plane.direction << s.plane.fallSpeed << s.plane.angle << s.plane.crashing;
+    p << airRaidMagic << airRaidVersion << s.plane.bombing << static_cast<std::uint16_t>(s.bombs.size());
+    for (const auto& bomb : s.bombs) p << bomb.id << bomb.position << bomb.velocity << bomb.age;
 }
 bool readState(sf::Packet& p, Snapshot& s) {
     std::uint8_t phase{}, count{};
@@ -282,7 +288,7 @@ bool readState(sf::Packet& p, Snapshot& s) {
             }
             for (auto& event : s.events) {
                 std::uint8_t kind{}; p >> kind >> event.radius >> event.intensity;
-                if (!p || kind>static_cast<std::uint8_t>(EventKind::PlaneCrash) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
+                if (!p || kind>static_cast<std::uint8_t>(EventKind::BombImpact) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
                     !std::isfinite(event.intensity) || event.intensity<0 || event.intensity>1) return false;
                 event.kind=static_cast<EventKind>(kind);
             }
@@ -344,6 +350,14 @@ bool readState(sf::Packet& p, Snapshot& s) {
             if (!p || !std::isfinite(s.plane.hp) || s.plane.hp<0 || s.plane.hp>200 ||
                 !std::isfinite(s.plane.direction) || std::abs(s.plane.direction)!=1 || !std::isfinite(s.plane.fallSpeed) ||
                 !std::isfinite(s.plane.angle)) return false;
+        } else if (marker==airRaidMagic && version==airRaidVersion) {
+            p >> s.plane.bombing >> n;
+            if (!p || n>128) return false;
+            s.bombs.resize(n);
+            for (auto& bomb : s.bombs) {
+                p >> bomb.id >> bomb.position >> bomb.velocity >> bomb.age;
+                if (!p || !finite(bomb.position) || !finite(bomb.velocity) || !std::isfinite(bomb.age) || bomb.age<0 || bomb.age>20) return false;
+            }
         } else break;
     }
     return static_cast<bool>(p);
@@ -351,18 +365,22 @@ bool readState(sf::Packet& p, Snapshot& s) {
 
 struct Channel {
     std::unique_ptr<sf::TcpSocket> socket{std::make_unique<sf::TcpSocket>()};
-    struct Frame { std::vector<std::uint8_t> bytes; std::size_t sent{}; };
+    struct Frame { std::vector<std::uint8_t> bytes; std::size_t sent{}; bool snapshot{}; };
     std::deque<Frame> outbound;
     std::vector<std::uint8_t> inbound;
     std::deque<sf::Packet> messages;
     bool alive{true};
     Clock::time_point lastReceive{Clock::now()};
-    void queue(sf::Packet p) {
+    void queue(sf::Packet p, bool snapshot = false) {
+        // A stalled reader needs the latest state, not a growing queue of obsolete
+        // snapshots. Never replace a partially sent frame or an ordered command.
+        if (snapshot && !outbound.empty() && outbound.back().snapshot && outbound.back().sent==0) outbound.pop_back();
         const auto size = p.getDataSize();
         std::size_t queued = 0;
         for (const auto& f : outbound) queued += f.bytes.size() - f.sent;
         if (size > maxFrame || queued + size + 4 > maxQueued) { alive = false; return; }
         Frame f;
+        f.snapshot=snapshot;
         f.bytes.resize(size + 4);
         for (int i = 0; i < 4; ++i) f.bytes[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(size >> (24 - 8 * i));
         const auto* bytes = static_cast<const std::uint8_t*>(p.getData());
@@ -411,7 +429,7 @@ struct Server::Impl {
     struct Peer {
         Channel channel;
         PlayerId id{noPlayer};
-        bool nativeHealth{}, battlefield{}, sky{}, missile{}, rules{};
+        bool nativeHealth{}, battlefield{}, sky{}, missile{}, rules{}, airRaid{};
         Clock::time_point lastInput{Clock::now()};
     };
     std::vector<std::unique_ptr<Peer>> peers;
@@ -441,8 +459,9 @@ struct Server::Impl {
                 peer.sky = marker == capabilityMagic && (capabilities & skyCapability) != 0;
                 peer.missile = marker == capabilityMagic && (capabilities & missileCapability) != 0;
                 peer.rules = marker == capabilityMagic && (capabilities & rulesCapability) != 0;
+                peer.airRaid = marker == capabilityMagic && (capabilities & airRaidCapability) != 0;
             }
-            if (config.loadoutSelection && (!peer.battlefield || !peer.sky || !peer.missile || !peer.rules)) {
+            if (config.loadoutSelection && (!peer.battlefield || !peer.sky || !peer.missile || !peer.rules || !peer.airRaid)) {
                 auto error=packet(Message::Error); error << std::string("Incompatible game version.");
                 peer.channel.queue(std::move(error)); peer.channel.flush(); peer.channel.alive=false; return;
             }
@@ -465,6 +484,7 @@ struct Server::Impl {
             writeSkyConfig(welcome,config.weapon);
             writeMissileConfig(welcome,config.weapon);
             welcome << rulesMagic << rulesVersion;
+            welcome << airRaidMagic << airRaidVersion;
             peer.channel.queue(std::move(welcome));
             return;
         }
@@ -528,7 +548,7 @@ struct Server::Impl {
                 for (auto& peer : peers) if (peer->id != noPlayer) {
                     auto state = packet(Message::State);
                     writeState(state,snapshot,peer->nativeHealth);
-                    peer->channel.queue(std::move(state));
+                    peer->channel.queue(std::move(state),true);
                 }
             }
             for (auto& peer : peers) peer->channel.flush();
@@ -558,15 +578,17 @@ Client::Client() : impl_(std::make_unique<Impl>()) {}
 Client::~Client() = default;
 bool Client::connect(const std::string& address, unsigned short port, const std::string& name) {
     disconnect(); impl_->error.clear();
-    const auto ip = sf::IpAddress::resolve(address);
+    const auto endpoint=parseEndpoint(address,port);
+    if (!endpoint) { impl_->error="Invalid address or port."; return false; }
+    const auto ip = sf::IpAddress::resolve(endpoint->address);
     if (!ip) { impl_->error = "Invalid IP address."; return false; }
     auto channel = std::make_unique<Channel>();
-    if (channel->socket->connect(*ip, port, sf::seconds(1.5f)) != Status::Done) {
-        impl_->error = "Connection failed."; return false;
+    if (channel->socket->connect(*ip, endpoint->port, sf::seconds(5.f)) != Status::Done) {
+        impl_->error = "Host unreachable. Check port, LAN and firewall."; return false;
     }
     channel->socket->setBlocking(false); impl_->channel = std::move(channel);
     auto hello = packet(Message::Hello);
-    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability|battlefieldCapability|skyCapability|missileCapability|rulesCapability);
+    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability|battlefieldCapability|skyCapability|missileCapability|rulesCapability|airRaidCapability);
     impl_->queue(std::move(hello));
     return true;
 }
@@ -582,7 +604,7 @@ void Client::poll() {
         if (type == static_cast<std::uint8_t>(Message::Welcome)) {
             p >> impl_->id;
             valid = impl_->id < maxPlayers && readConfig(p, impl_->config);
-            bool missileConfig=false, rulesConfig=false;
+            bool missileConfig=false, rulesConfig=false, airRaidConfig=false;
             if (valid && !p.endOfPacket()) {
                 std::uint32_t marker{}; std::uint16_t version{};
                 p >> marker >> version;
@@ -609,13 +631,14 @@ void Client::poll() {
                         } else if (marker==missileMagic && version==missileVersion) {
                             readMissileConfig(p,impl_->config.weapon); missileConfig=static_cast<bool>(p);
                         } else if (marker==rulesMagic && version==rulesVersion) { rulesConfig=true;
+                        } else if (marker==airRaidMagic && version==airRaidVersion) { airRaidConfig=true;
                         } else break;
                     }
                     valid = static_cast<bool>(p);
                     if (valid) try { impl_->config.validate(); } catch (...) { valid = false; }
                 }
             }
-            if (valid && impl_->config.loadoutSelection && (!missileConfig || !rulesConfig)) {
+            if (valid && impl_->config.loadoutSelection && (!missileConfig || !rulesConfig || !airRaidConfig)) {
                 impl_->error="Incompatible game version."; valid=false;
             }
         } else if (type == static_cast<std::uint8_t>(Message::State) && impl_->id != noPlayer) {
@@ -700,7 +723,27 @@ Snapshot Client::interpolated() const {
         auto pb = std::ranges::find(b->state.projectiles, projectile.id, &Projectile::id);
         if (pa != a->state.projectiles.end() && pb != b->state.projectiles.end()) projectile.position = mix(pa->position, pb->position, t);
     }
+    for (auto& bomb : result.bombs) {
+        const auto pa=std::ranges::find(a->state.bombs,bomb.id,&AirBomb::id), pb=std::ranges::find(b->state.bombs,bomb.id,&AirBomb::id);
+        if (pa!=a->state.bombs.end() && pb!=b->state.bombs.end()) bomb.position=mix(pa->position,pb->position,t);
+    }
     return result;
+}
+std::optional<Endpoint> parseEndpoint(const std::string& text,unsigned short defaultPort) {
+    const auto trim=[](std::string_view value) {
+        const auto first=value.find_first_not_of(" \t\r\n"), last=value.find_last_not_of(" \t\r\n");
+        return first==std::string_view::npos ? std::string_view{} : value.substr(first,last-first+1);
+    };
+    auto host=trim(text); unsigned port=defaultPort;
+    if (const auto colon=host.find(':'); colon!=std::string_view::npos) {
+        const auto number=trim(host.substr(colon+1)); host=trim(host.substr(0,colon));
+        if (number.empty()) return std::nullopt;
+        const auto result=std::from_chars(number.data(),number.data()+number.size(),port);
+        if (result.ec!=std::errc{} || result.ptr!=number.data()+number.size()) return std::nullopt;
+    }
+    if (host.empty() || port==0 || port>65535 || host.size()>253) return std::nullopt;
+    for (const char ch : host) if (!((ch>='0' && ch<='9') || (ch>='a' && ch<='z') || (ch>='A' && ch<='Z') || ch=='.' || ch=='-')) return std::nullopt;
+    return Endpoint{std::string(host),static_cast<unsigned short>(port)};
 }
 std::string localAddress() {
 #if defined(__APPLE__) || defined(__linux__)

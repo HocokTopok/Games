@@ -2,9 +2,12 @@
 #include "GameSession.hpp"
 #include <memory>
 #include <string>
+#include <optional>
 
 namespace tw::net {
 inline constexpr std::uint32_t protocolVersion = 1;
+struct Endpoint { std::string address; unsigned short port; };
+std::optional<Endpoint> parseEndpoint(const std::string& text, unsigned short defaultPort);
 class Server {
 public:
     explicit Server(Config config, unsigned short port);

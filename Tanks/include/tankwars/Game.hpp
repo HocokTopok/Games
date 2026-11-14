@@ -40,6 +40,7 @@ private:
     sf::Vector2i pointerPixel_{}, pressPixel_{}, releasePixel_{};
     Screen screen_{Screen::Main}, settingsReturn_{Screen::Main};
     PlayerId draggedPlayer_{noPlayer};
+    std::optional<std::uint8_t> selectedMap_;
     bool released_{};
     bool paused_{}, clicked_{}, autoReadySent_{}, showFps_{};
     float accumulator_{}, inputTimer_{}, wheelTime_{}, wheelDirection_{}, time_{}, fps_{};

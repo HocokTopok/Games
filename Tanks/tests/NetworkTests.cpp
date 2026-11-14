@@ -18,10 +18,15 @@ template<class Predicate> void until(tw::net::Client& a,tw::net::Client& b,Predi
     throw std::runtime_error("Timed out waiting for server state");
 }
 void run() {
+    const auto endpoint=tw::net::parseEndpoint(" \t127.0.0.1 : 53001 \r\n",53000);
+    require(endpoint && endpoint->address=="127.0.0.1" && endpoint->port==53001,"pasted endpoints trim surrounding whitespace");
+    for (const auto* invalid : {"", "127.0.0.1:", "127.0.0.1:0", "127.0.0.1:65536", "127.0.0.1:-1", "127.0.0.1:12x", "127.0.0.1:53:54", "127 .0.0.1"})
+        require(!tw::net::parseEndpoint(invalid,53000),"malformed addresses and ports are rejected");
     tw::Config config; config.asymmetricLoadouts=false; config.weapon.reloadSeconds=0.2f;
     tw::net::Server server(config,0);
     tw::net::Client a,b;
-    require(a.connect("127.0.0.1",server.port(),"ALPHA"),"first client connects");
+    require(!a.connect("127.0.0.1:bad",server.port(),"ALPHA"),"invalid first attempt can be retried");
+    require(a.connect(" 127.0.0.1 : "+std::to_string(server.port())+" ",53000,"ALPHA"),"first client connects with pasted endpoint and custom port");
     until(a,b,[&]{return a.welcomed();});
     require(b.connect("127.0.0.1",server.port(),"BRAVO"),"second client connects");
     until(a,b,[&]{return b.welcomed() && a.latest().players.size()==2;});
@@ -56,6 +61,9 @@ void run() {
     require(a.latest().winner==0,"disconnect awards survivor");
     a.rematch(); until(a,b,[&]{return a.latest().phase==tw::Phase::Lobby;});
     require(a.latest().players.size()==1,"rematch lobby cleaned");
+    require(b.connect(" 127.0.0.1 ",server.port(),"BRAVO"),"disconnected client can reconnect to the same host");
+    until(a,b,[&]{return b.welcomed() && a.latest().players.size()==2 && b.latest().players.size()==2;});
+    require(b.id()==1 && b.error().empty(),"reconnection restores the vacant seat and clears previous errors");
 }
 void runLoadouts() {
     // Leave room for the faster mortar shell to land inside the fixture.

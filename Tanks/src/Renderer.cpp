@@ -89,7 +89,7 @@ void Renderer::observe(const Snapshot& state) {
         lastEvent_ = e.id;
         if (e.kind==EventKind::SupplyLanded || e.kind==EventKind::Pickup || e.kind==EventKind::FlareImpact) { bursts_.push_back({e.position,e.kind==EventKind::Pickup ? accent : (e.kind==EventKind::FlareImpact ? sf::Color{255,188,64} : sf::Color{219,188,114}),0,0.7f,45}); continue; }
         if (e.kind==EventKind::SkyStrike) { bursts_.push_back({e.position,{255,211,93},0,0.7f,e.radius*1.5f}); shake_=std::max(shake_,7.f); continue; }
-        if (e.kind==EventKind::MortarImpact || e.kind==EventKind::OrbImpact || e.kind==EventKind::Ricochet || e.kind==EventKind::MissileImpact || e.kind==EventKind::PlaneCrash) { addWeaponEffect(e); continue; }
+        if (e.kind==EventKind::MortarImpact || e.kind==EventKind::OrbImpact || e.kind==EventKind::Ricochet || e.kind==EventKind::MissileImpact || e.kind==EventKind::PlaneCrash || e.kind==EventKind::BombImpact) { addWeaponEffect(e); continue; }
         const bool shot = e.kind == EventKind::Shot, death = e.kind == EventKind::Destroyed;
         const auto* owner = findTank(state, e.player);
         const bool napalm = e.kind == EventKind::NapalmImpact || (shot && owner && owner->weapon == WeaponKind::Napalm);
@@ -344,6 +344,7 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
     }
     skyStrikes(c,s);
     effects();
+    foregroundFog(c,*map,s.elapsed);
     if (cursor && s.phase == Phase::Playing) {
         circle(mouse,10,sf::Color::Transparent,alpha(white,130));
         line(mouse + Vec2{-16,0},mouse + Vec2{-7,0},white); line(mouse + Vec2{7,0},mouse + Vec2{16,0},white);
@@ -356,7 +357,12 @@ void Renderer::hud(const Config& c, const Snapshot& s, PlayerId local) {
     text(MapFactory::name(c.mapId),{134,34},16,muted);
     const auto total=std::max(0,static_cast<int>(std::ceil(matchDuration-s.elapsed)));
     std::ostringstream clock; clock << std::setfill('0') << std::setw(2) << total/60 << ':' << std::setw(2) << total%60;
-    text(clock.str(),{800,29},25,total<=30 ? playerColor(1) : white,true);
+    if (s.elapsed<matchDuration) text(clock.str(),{800,29},25,total<=30 ? playerColor(1) : white,true);
+    else {
+        const int next=static_cast<int>(std::ceil(airRaidInterval-std::fmod(s.elapsed-matchDuration,airRaidInterval)));
+        text("AIR RAID",{800,17},24,playerColor(1),true);
+        text("NEXT PASS / "+std::to_string(next)+" s",{800,47},14,muted,true);
+    }
     line({42,73},{1558,73},{44,65,82});
     const float cardWidth = s.players.size() > 2 ? 275.f : 320.f;
     for (const auto& p : s.players) {

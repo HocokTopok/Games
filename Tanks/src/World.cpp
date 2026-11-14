@@ -12,6 +12,7 @@ World::World(Config config, std::uint32_t supplySeed) : config_(config) {
 void World::selectMap(Config config) { config_=config; map_=MapFactory::create(config_); }
 void World::reset(const std::vector<Player>& players) {
     map_=MapFactory::create(config_); supplies_.clear(); plane_={}; supplyTimer_=30;
+    bombs_.clear(); bombTargets_.clear(); nextBombTarget_=0; nextAirRaid_=matchDuration; planeDirection_=1;
     tanks_.clear(); projectiles_.clear(); events_.clear(); lasers_.clear(); fires_.clear(); skyStrikes_.clear(); tick_ = 0; ++round_;
     constexpr std::array<float, 8> fractions{0, 1, 0.24f, 0.76f, 0.12f, 0.88f, 0.36f, 0.64f};
     std::array<bool,maxPlayers> occupied{}; bool validSeats=true;
@@ -269,6 +270,7 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
     });
     updateFire(dt);
     updateSkyStrikes(dt);
+    updateBombs(dt);
 }
 bool World::hitPlane(Vec2 from, Vec2 to, float radius, float& fraction) const {
     if (!plane_.active || plane_.crashing) return false;
@@ -288,19 +290,46 @@ void World::damagePlane(Vec2 center, float radius, float amount) {
     plane_.hp=std::max(0.f,plane_.hp-amount*(1-distance/radius));
     if (plane_.hp<=0) { plane_.crashing=true; plane_.fallSpeed=35; }
 }
-void World::updateSupplies(float dt) {
-    supplyTimer_-=dt;
+void World::spawnPlane(bool bombing) {
     const auto random=[&]() { randomState_^=randomState_<<13; randomState_^=randomState_>>17; randomState_^=randomState_<<5; return randomState_; };
-    if (supplyTimer_<=0) {
-        supplyTimer_+=30;
-        const float direction=planeDirection_; planeDirection_=-planeDirection_;
-        float highest=config_.worldHeight;
-        for (float x=0;x<=config_.worldWidth;x+=4) highest=std::min(highest,map_->height(x));
-        // Keep the route near the top at every map scale, with room above all peaks.
-        const float altitude=std::min(config_.worldHeight*0.07f,highest-96.f);
-        plane_={true,{direction>0 ? -150.f : config_.worldWidth+150.f,std::max(40.f,altitude)},
-            config_.worldWidth*(0.25f+0.5f*(random()%10001)/10000.f),false};
-        plane_.direction=direction;
+    const float direction=planeDirection_; planeDirection_=-planeDirection_;
+    float highest=config_.worldHeight;
+    for (float x=0;x<=config_.worldWidth;x+=4) highest=std::min(highest,map_->height(x));
+    // Keep the route near the top at every map scale, with room above all peaks.
+    const float altitude=std::min(config_.worldHeight*0.07f,highest-96.f);
+    plane_={true,{direction>0 ? -150.f : config_.worldWidth+150.f,std::max(40.f,altitude)},
+        config_.worldWidth*(0.25f+0.5f*(random()%10001)/10000.f),false};
+    plane_.direction=direction;
+    plane_.bombing=bombing;
+    bombTargets_.clear(); nextBombTarget_=0;
+    if (bombing) {
+        // Space impacts along the surface, including steep ravine walls. Adjacent
+        // mortar damage radii overlap even at the midpoint and at both map edges.
+        const auto samples=static_cast<unsigned>(std::ceil(config_.worldWidth/4));
+        const float step=config_.worldWidth/samples;
+        std::vector<float> arc{0};
+        for (unsigned i=1;i<=samples;++i)
+            arc.push_back(arc.back()+length(Vec2{step,map_->height(i*step)-map_->height((i-1)*step)}));
+        const auto intervals=static_cast<unsigned>(std::ceil(arc.back()/(config_.weapon.mortarBlastRadius*1.92f)));
+        for (unsigned i=0;i<=intervals;++i) {
+            const float distance=arc.back()*i/intervals;
+            auto sample=std::lower_bound(arc.begin(),arc.end(),distance);
+            const auto index=static_cast<std::size_t>(sample-arc.begin());
+            const float x=index==0 ? 0.f : (index-1+(distance-arc[index-1])/(arc[index]-arc[index-1]))*step;
+            bombTargets_.push_back(std::min(x,config_.worldWidth));
+        }
+        if (direction<0) std::ranges::reverse(bombTargets_);
+    }
+}
+void World::updateSupplies(float dt) {
+    const auto random=[&]() { randomState_^=randomState_<<13; randomState_^=randomState_>>17; randomState_^=randomState_<<5; return randomState_; };
+    const float elapsed=tick_*config_.fixedStep;
+    if (elapsed>=nextAirRaid_) {
+        nextAirRaid_+=airRaidInterval;
+        spawnPlane(true);
+    } else if (elapsed<matchDuration) {
+        supplyTimer_-=dt;
+        if (supplyTimer_<=0) { supplyTimer_+=30; spawnPlane(false); }
     }
     if (plane_.active) {
         const Vec2 previous=plane_.position;
@@ -321,7 +350,14 @@ void World::updateSupplies(float dt) {
                 }
             }
         }
-        if (!plane_.crashing && !plane_.released && (plane_.position.x-plane_.targetX)*plane_.direction>=0) {
+        if (!plane_.crashing && plane_.bombing) {
+            while (nextBombTarget_<bombTargets_.size() && (plane_.position.x-bombTargets_[nextBombTarget_])*plane_.direction>=0) {
+                const float x=bombTargets_[nextBombTarget_++];
+                bombs_.push_back({nextProjectile_++,{x,plane_.position.y+22},{0,18},0});
+            }
+            plane_.released=nextBombTarget_==bombTargets_.size();
+        }
+        if (!plane_.crashing && !plane_.bombing && !plane_.released && (plane_.position.x-plane_.targetX)*plane_.direction>=0) {
             plane_.released=true;
             if (supplies_.size()>=8) supplies_.erase(supplies_.begin());
             supplies_.push_back({nextProjectile_++,{plane_.targetX,plane_.position.y+15},0,0,static_cast<PickupKind>(random()%3),false});
@@ -353,12 +389,31 @@ void World::updateSupplies(float dt) {
         return drop.age>75;
     });
 }
+void World::updateBombs(float dt) {
+    std::erase_if(bombs_,[&](AirBomb& bomb) {
+        const Vec2 previous=bomb.position;
+        bomb.position+=bomb.velocity*dt+Vec2{0,0.5f*config_.gravity*dt*dt};
+        bomb.velocity.y+=config_.gravity*dt; bomb.age+=dt;
+        const auto hit=Physics::sweep(previous,bomb.position,5,*map_,tanks_,noPlayer,config_.tankHalfWidth,config_.tankHalfHeight);
+        if (!hit) return bomb.age>20;
+        const float radius=config_.weapon.mortarBlastRadius, amount=config_.weapon.mortarDamage;
+        emit(EventKind::BombImpact,hit->position,noPlayer,radius*1.25f);
+        map_->crater(hit->position,65,20);
+        for (auto& tank : tanks_) if (tank.alive()) {
+            const float splash=Physics::areaDamage(hit->position,tank,radius,amount,config_);
+            // Mortar-strength direct hits, with a soft fringe between overlapping blasts.
+            Physics::damage(tank,tank.id==hit->tank ? amount : splash*splash/amount);
+            if (!tank.alive()) emit(EventKind::Destroyed,tank.position,tank.id);
+        }
+        return true;
+    });
+}
 Snapshot World::snapshot() const {
     Snapshot s;
     s.tick = tick_; s.round = round_; s.elapsed = static_cast<float>(tick_) * config_.fixedStep;
     s.tanks = tanks_; s.projectiles = projectiles_; s.events = events_; s.lasers = lasers_; s.fires = fires_; s.skyStrikes=skyStrikes_;
     s.detailedWeapons = true; s.battlefieldData=true; s.mapId=config_.mapId;
-    s.terrain=map_->samples(); s.supplies=supplies_; s.plane=plane_;
+    s.terrain=map_->samples(); s.supplies=supplies_; s.plane=plane_; s.bombs=bombs_;
     return s;
 }
 }

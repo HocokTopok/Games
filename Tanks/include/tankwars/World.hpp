@@ -24,6 +24,8 @@ private:
     void detonate(const Hit& hit, const Projectile& projectile);
     void detonateMissile(const Hit& hit, const Projectile& projectile);
     void updateSupplies(float dt);
+    void updateBombs(float dt);
+    void spawnPlane(bool bombing);
     void damagePlane(Vec2 center, float radius, float amount);
     bool hitPlane(Vec2 from, Vec2 to, float radius, float& fraction) const;
     Config config_;
@@ -36,6 +38,10 @@ private:
     std::vector<SkyStrike> skyStrikes_;
     std::vector<SupplyDrop> supplies_;
     SupplyPlane plane_;
+    std::vector<AirBomb> bombs_;
+    std::vector<float> bombTargets_;
+    std::size_t nextBombTarget_{};
+    float nextAirRaid_{matchDuration};
     float supplyTimer_{30}, planeDirection_{1};
     std::uint32_t randomState_{};
     std::uint32_t tick_{}, round_{}, nextProjectile_{1}, nextEvent_{1};

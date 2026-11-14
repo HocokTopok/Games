@@ -123,6 +123,7 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
             gain=0.58f; break;
         case EventKind::MissileImpact:
         case EventKind::PlaneCrash:
+        case EventKind::BombImpact:
         case EventKind::MortarImpact: cue=Cue::MortarBlast; gain=0.95f; priority=4; a.duck=1; break;
         case EventKind::SkyStrike: cue=Cue::MortarBlast; gain=1; priority=4; a.duck=1; break;
         case EventKind::OrbImpact: cue=Cue::OrbBlast; gain=0.5f+e.intensity*0.45f; priority=3; a.duck=std::max(a.duck,0.7f); break;
@@ -146,6 +147,11 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
                 auto& loop=a.loops[1]; const float volume=0.11f*near*std::clamp(p.velocity.y/300.f,0.f,1.f);
                 if (volume>loop.target) { loop.target=volume; loop.sound->setPitch(0.82f+std::clamp(p.velocity.y/1100.f,0.f,0.35f)); a.pan(*loop.sound,p.position); }
             }
+        }
+        for (const auto& bomb : s.bombs) {
+            auto& loop=a.loops[1];
+            const float volume=0.13f*spatialGain(bomb.position,a.listener)*std::clamp(bomb.velocity.y/350.f,0.f,1.f);
+            if (volume>loop.target) { loop.target=volume; loop.sound->setPitch(0.78f+std::min(0.4f,bomb.velocity.y/1800)); a.pan(*loop.sound,bomb.position); }
         }
         for (const auto& strike : s.skyStrikes) if (strike.age>=c.weapon.skyWarmup) {
             auto& loop=a.loops[0];

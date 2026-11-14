@@ -83,7 +83,7 @@ void timer() {
     for (int i=0;i<120*179;++i) game.step();
     require(game.snapshot().phase==tw::Phase::Playing,"match continues before deadline");
     for (int i=0;i<122;++i) game.step();
-    const auto s=game.snapshot(); require(s.phase==tw::Phase::Victory && s.winner==tw::noPlayer && near(s.elapsed,180,0.02f),"exact three-minute deadline declares draw");
+    const auto s=game.snapshot(); require(s.phase==tw::Phase::Playing && s.elapsed>=180 && s.plane.active && s.plane.bombing,"three-minute deadline starts air raids and keeps the battle running");
 }
 void missileLock() {
     tw::Config c; c.hillHeight=0; c.titanMode=true; tw::World world(c); world.reset(pilots(tw::WeaponKind::Missile));

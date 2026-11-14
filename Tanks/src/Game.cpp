@@ -43,21 +43,13 @@ void Game::host() {
     } catch (const std::exception& e) { const std::string message = e.what(); leave(); status_ = message; }
 }
 void Game::join() {
-    auto address = address_;
-    auto port = config_.port;
-    if (const auto colon = address.rfind(':'); colon != std::string::npos) {
-        try {
-            std::size_t used{}; const auto number = std::stoul(address.substr(colon+1), &used);
-            if (used != address.size() - colon - 1 || number == 0 || number > 65535) throw std::invalid_argument("port");
-            port = static_cast<unsigned short>(number); address.resize(colon);
-        } catch (...) { status_ = "Invalid address."; return; }
-    }
     client_ = std::make_unique<net::Client>();
-    if (client_->connect(address,port,"PILOT 02")) { status_.clear(); screen_ = Screen::Lobby; autoReadySent_ = false; }
+    if (client_->connect(address_,config_.port,"PILOT 02")) { status_.clear(); screen_ = Screen::Lobby; autoReadySent_ = false; }
     else { status_ = client_->error(); client_.reset(); screen_ = Screen::Join; }
 }
 void Game::leave() {
     client_.reset(); server_.reset(); solo_.reset(); state_ = {}; effectState_ = {}; draggedPlayer_=noPlayer;
+    selectedMap_.reset();
     paused_ = false; accumulator_ = 0; inputTimer_ = 0; wheelTime_ = 0; autoReadySent_ = false;
     controls_.reset();
     screen_ = Screen::Main; status_.clear(); renderer_.resetEffects(); renderer_.resize(config_);
@@ -182,6 +174,7 @@ void Game::lobby(Vec2 mouse) {
     std::optional<std::uint8_t> dropSeat;
     const bool allReady=state_.players.size()>=2 && std::ranges::all_of(state_.players,[](const auto& p){return p.ready && p.weaponChosen;});
     const bool chooseMap=c.loadoutSelection && allReady;
+    if (!chooseMap) selectedMap_.reset();
     renderer_.text("LOBBY",{90,42},44,Renderer::white);
     const auto endpoint=solo_ ? "SOLO / SENTINELS" : (server_ ? localAddress_+":"+std::to_string(server_->port()) : address_);
     renderer_.text(endpoint,{94,105},20,Renderer::accent);
@@ -238,9 +231,7 @@ void Game::lobby(Vec2 mouse) {
     } else for (std::uint8_t i=0;i<4;++i) {
         const float x=90+i*363.f;
         renderer_.mapPreview(i,{x,458},{343,127});
-        if (renderer_.button({x,597},{343,77},MapFactory::name(i),mouse,clicked_,i==0,local==0)) {
-            if (client_) client_->map(i); else solo_->setMap(local,i);
-        }
+        if (renderer_.button({x,597},{343,77},MapFactory::name(i),mouse,clicked_,selectedMap_==i,local==0)) selectedMap_=i;
     }
     for (std::uint8_t i=0;i<maxPlayers;++i) {
         const Vec2 center{113.f+i*53,736};
@@ -251,7 +242,16 @@ void Game::lobby(Vec2 mouse) {
             if (client_) client_->color(i); else solo_->setColor(local,i);
         }
     }
-    if (renderer_.button({1020,705},{480,74},me && me->ready ? "CHANGE LOADOUT" : "CONFIRM WEAPON",mouse,clicked_,true,me && (me->weaponChosen || !c.loadoutSelection))) {
+    if (chooseMap) {
+        if (renderer_.button({520,705},{480,74},"CHANGE LOADOUT",mouse,clicked_,true,me!=nullptr)) {
+            if (client_) client_->ready(false); else solo_->setReady(local,false);
+            selectedMap_.reset();
+        }
+        if (renderer_.button({1020,705},{480,74},"CONFIRM MAP",mouse,clicked_,true,local==0 && selectedMap_.has_value())) {
+            if (client_) client_->map(*selectedMap_); else solo_->setMap(local,*selectedMap_);
+        }
+        if (local!=0) renderer_.text("HOST IS CHOOSING THE BATTLEFIELD",{1020,797},15,Renderer::muted);
+    } else if (renderer_.button({1020,705},{480,74},me && me->ready ? "CHANGE LOADOUT" : "CONFIRM WEAPON",mouse,clicked_,true,me && (me->weaponChosen || !c.loadoutSelection))) {
         if (client_) client_->ready(!me->ready); else solo_->setReady(local,!me->ready);
     }
     if (renderer_.button({90,811},{255,61},solo_ ? "MAIN MENU" : "LEAVE ROOM",mouse,clicked_)) leave();
@@ -331,6 +331,10 @@ void Game::draw() {
             for (auto& p : visual.projectiles) {
                 const auto prev = std::ranges::find(previousSolo_.projectiles,p.id,&Projectile::id);
                 if (prev != previousSolo_.projectiles.end()) p.position = mix(prev->position,p.position,t);
+            }
+            for (auto& bomb : visual.bombs) {
+                const auto prev=std::ranges::find(previousSolo_.bombs,bomb.id,&AirBomb::id);
+                if (prev!=previousSolo_.bombs.end()) bomb.position=mix(prev->position,bomb.position,t);
             }
         }
         renderer_.battle(activeConfig(),visual,client_ ? client_->id() : 0,renderer_.worldMouse(pointerPixel_),!paused_ && window_.hasFocus());

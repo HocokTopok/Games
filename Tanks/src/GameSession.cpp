@@ -203,9 +203,8 @@ void GameSession::step() {
     std::set<unsigned> aliveTeams;
     for (const auto& t : world_.tanks()) if (t.alive()) aliveTeams.insert(t.team);
     const auto state = world_.snapshot();
-    if (state.elapsed>=matchDuration) { phase_=Phase::Victory; winner_=noPlayer; return; }
     const bool burningSurvivor = std::ranges::any_of(state.tanks, [](const auto& t) { return t.alive() && t.burnRemaining > 0; });
-    if (aliveTeams.size() <= 1 && state.projectiles.empty() && state.fires.empty() && state.skyStrikes.empty() && !burningSurvivor && (!state.plane.active || !state.plane.crashing)) {
+    if (aliveTeams.size() <= 1 && state.projectiles.empty() && state.bombs.empty() && state.fires.empty() && state.skyStrikes.empty() && !burningSurvivor && (!state.plane.active || (!state.plane.crashing && !state.plane.bombing))) {
         phase_ = Phase::Victory;
         for (const auto& t : world_.tanks()) if (t.alive()) { winner_ = t.id; break; }
     }
