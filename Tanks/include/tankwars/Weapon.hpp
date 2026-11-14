@@ -16,6 +16,23 @@ inline const char* weaponName(WeaponKind kind) {
     default: return "CANNON";
     }
 }
+inline const char* gadgetName(GadgetKind kind, WeaponKind weapon) {
+    if (kind==GadgetKind::Jetpack) return "JET ENGINE";
+    if (kind==GadgetKind::Armor) return "REACTIVE ARMOR";
+    switch (weapon) {
+    case WeaponKind::Napalm: return "BLUE INFERNO";
+    case WeaponKind::Mortar: return "TRIPLE SALVO";
+    case WeaponKind::Ricochet: return "OVERDRIVE";
+    case WeaponKind::Missile: return "CLUSTER WARHEAD";
+    case WeaponKind::Flare: return "SUPERNOVA";
+    default: return "SPECIALIST";
+    }
+}
+inline float clusterDamage(float distance) {
+    if (distance<=200) return 15;
+    if (distance<=400) return 15-(distance-200)/40;
+    return std::max(5.f,10-(distance-400)/80);
+}
 class Cannon {
 public:
     static float firingAngle(WeaponKind kind, float aim) {
@@ -32,9 +49,12 @@ public:
         Projectile p{id, tank.id, tank.pivot() + direction(aim)*spec.barrelLength, direction(aim) * (tank.power*scale), 0};
         p.damageScale = tank.damageRemaining > 0 ? 1.5f : 1.f;
         p.weapon = tank.weapon; p.napalm = tank.weapon == WeaponKind::Napalm;
+        p.blueFire=tank.hasGadget && tank.gadget==GadgetKind::Specialist && tank.weapon==WeaponKind::Napalm && tank.gadgetRemaining>0;
+        if (p.blueFire) p.damageScale*=1.5f;
+        p.empowered=tank.specialistArmed && tank.weapon==WeaponKind::Flare;
         return p;
     }
-    static float ricochetDamage(unsigned bounces) { return 30.f + 10.f * std::min(bounces,3u); }
+    static float ricochetDamage(unsigned bounces) { return 10.f + 15.f * std::min(bounces,3u); }
     static float orbCharge(float age, const WeaponSpec& spec) { return std::clamp(age/spec.orbGrowthSeconds,0.f,1.f); }
     static float orbDamage(float age, const WeaponSpec& spec) { const float t=orbCharge(age,spec); return 1.f+99.f*t*t; }
     static float radius(const Projectile& p, const WeaponSpec& spec) {

@@ -34,9 +34,9 @@ void run() {
     until(host,join,[&]{return host.welcomed() && join.welcomed() && host.latest().players.size()==2;});
     const auto& w=join.config().weapon;
     require(w.flareReload==9 && w.flareSpeedScale==0.9f && w.flareGravityScale==0.55f && w.skyWarmup==0.45f && w.skyDuration==2.75f && w.skyRadius==92 && w.skyDamagePerSecond==125,"all custom flare and beam settings come from the host");
-    host.weapon(tw::WeaponKind::Flare); join.weapon(tw::WeaponKind::Ricochet); host.ready(true); join.ready(true);
-    until(host,join,[&]{return host.latest().players[0].ready && host.latest().players[1].ready;});
-    host.map(0); until(host,join,[&]{return host.latest().phase==tw::Phase::Playing && join.latest().phase==tw::Phase::Playing;});
+    host.map(0); until(host,join,[&]{return join.latest().mapSelected;});
+    host.weapon(tw::WeaponKind::Flare); join.weapon(tw::WeaponKind::Ricochet); host.confirmWeapon(true); join.confirmWeapon(true); host.gadget(tw::GadgetKind::Jetpack); join.gadget(tw::GadgetKind::Jetpack); host.ready(true); join.ready(true);
+    until(host,join,[&]{return host.latest().phase==tw::Phase::Playing && join.latest().phase==tw::Phase::Playing;});
     require(join.latest().tanks[0].weapon==tw::WeaponKind::Flare,"fifth loadout replicates as a flare launcher");
     sf::RenderTexture ia({1440,810}),ib({1440,810});
     tw::Renderer a(ia,TANKWARS_TEST_ASSETS),b(ib,TANKWARS_TEST_ASSETS); a.settings.shake=b.settings.shake=false;

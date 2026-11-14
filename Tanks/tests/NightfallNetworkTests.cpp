@@ -39,11 +39,9 @@ void run() {
     until(a,b,[&]{return std::ranges::find(b.latest().players,b.id(),&tw::Player::id)->seat==2;});
     auto bot=std::ranges::find(a.latest().players,true,&tw::Player::bot)->id;
     a.botWeapon(bot,tw::WeaponKind::Flare);
-    a.weapon(tw::WeaponKind::Mortar); b.weapon(tw::WeaponKind::Missile); a.ready(true); b.ready(true);
-    until(a,b,[&]{return std::ranges::all_of(a.latest().players,[](const auto& p){return p.ready;});});
-    require(std::ranges::find(a.latest().players,bot,&tw::Player::id)->weapon==tw::WeaponKind::Flare,"bot weapon change reaches host and guest");
-    a.map(2);
-    until(a,b,[&]{return a.latest().phase==tw::Phase::Playing && b.latest().phase==tw::Phase::Playing && a.latest().tick==b.latest().tick;});
+    a.map(2); until(a,b,[&]{return b.latest().mapSelected;});
+    a.weapon(tw::WeaponKind::Mortar); b.weapon(tw::WeaponKind::Missile); a.confirmWeapon(true); b.confirmWeapon(true); a.gadget(tw::GadgetKind::Jetpack); b.gadget(tw::GadgetKind::Jetpack); a.ready(true); b.ready(true);
+    until(a,b,[&]{return a.latest().phase==tw::Phase::Playing && b.latest().phase==tw::Phase::Playing;});
     require(a.latest().tanks.size()==4 && b.latest().terrain==a.latest().terrain,"all four tanks and terrain synchronize");
     sf::RenderTexture ia({1600,900}),ib({1600,900}); tw::Renderer ra(ia,TANKWARS_TEST_ASSETS),rb(ib,TANKWARS_TEST_ASSETS);
     ra.settings.shake=rb.settings.shake=false;

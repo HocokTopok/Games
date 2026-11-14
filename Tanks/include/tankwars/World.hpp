@@ -17,7 +17,8 @@ public:
 private:
     void emit(EventKind kind, Vec2 position, PlayerId player, float radius = 0, float intensity = 1);
     void explode(const Hit& hit, bool laser = false, float damageScale = 1);
-    void ignite(const Hit& hit, PlayerId owner, float damageScale);
+    void ignite(const Hit& hit, PlayerId owner, float damageScale, bool blueFire);
+    void splitMissile(PlayerId owner);
     void updateFire(float dt);
     void summonSkyStrike(const Hit& hit, const Projectile& projectile);
     void updateSkyStrikes(float dt);

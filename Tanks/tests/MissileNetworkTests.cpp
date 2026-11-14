@@ -36,9 +36,9 @@ void run() {
     until(a,b,[&]{return a.welcomed() && b.welcomed();});
     const auto& w=b.config().weapon;
     require(w.missileReload==4.1f && w.missileSpeedScale==0.67f && w.missileTurnRate==1.25f && w.missileDamage==121 && w.missileBlastRadius==53,"all custom missile parameters synchronize");
-    a.weapon(tw::WeaponKind::Missile); b.weapon(tw::WeaponKind::Mortar); a.ready(true); b.ready(true);
-    until(a,b,[&]{return a.latest().players.size()==2 && a.latest().players[0].ready && a.latest().players[1].ready;});
-    a.map(0); until(a,b,[&]{return a.latest().phase==tw::Phase::Playing && b.latest().phase==tw::Phase::Playing;});
+    a.map(0); until(a,b,[&]{return b.latest().mapSelected;});
+    a.weapon(tw::WeaponKind::Missile); b.weapon(tw::WeaponKind::Mortar); a.confirmWeapon(true); b.confirmWeapon(true); a.gadget(tw::GadgetKind::Jetpack); b.gadget(tw::GadgetKind::Jetpack); a.ready(true); b.ready(true);
+    until(a,b,[&]{return a.latest().phase==tw::Phase::Playing && b.latest().phase==tw::Phase::Playing;});
     require(a.latest().tanks[0].weapon==tw::WeaponKind::Missile && b.latest().tanks[0].weapon==tw::WeaponKind::Missile,"missile selection reaches both clients");
     sf::RenderTexture ia({1600,900}), ib({1600,900});
     tw::Renderer ra(ia,TANKWARS_TEST_ASSETS), rb(ib,TANKWARS_TEST_ASSETS);

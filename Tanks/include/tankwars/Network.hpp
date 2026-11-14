@@ -32,6 +32,8 @@ public:
     void ready(bool value);
     void weapon(WeaponKind value);
     void map(std::uint8_t value);
+    void confirmWeapon(bool value);
+    void gadget(GadgetKind value);
     void color(std::uint8_t value);
     void rematch();
     void mode(std::uint8_t teamSize);

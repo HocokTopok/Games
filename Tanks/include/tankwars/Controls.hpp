@@ -16,7 +16,7 @@ public:
         using Scan = sf::Keyboard::Scancode;
         return {static_cast<float>(down(Scan::D)) - static_cast<float>(down(Scan::A)), aim,
                 static_cast<float>(down(Scan::W)) - static_cast<float>(down(Scan::S)), down(Scan::Space),
-                static_cast<float>(down(Scan::Up)) - static_cast<float>(down(Scan::Down))};
+                static_cast<float>(down(Scan::Up)) - static_cast<float>(down(Scan::Down)), down(Scan::E)};
     }
 private:
     void set(sf::Keyboard::Scancode code, bool value) {

@@ -15,6 +15,8 @@ public:
     void observe(const Snapshot& state);
     void scenery(const Config& config, float time, bool showcase = false, const Snapshot* state = nullptr);
     void battle(const Config& config, const Snapshot& state, PlayerId local, Vec2 mouse, bool cursor);
+    void updateBanner(float time);
+    void gadgetPreview(GadgetKind kind, WeaponKind weapon, Vec2 center, float time);
     void weaponPreview(WeaponKind kind, Vec2 center, float time);
     void mapPreview(std::uint8_t id, Vec2 position, Vec2 size);
     void hud(const Config& config, const Snapshot& state, PlayerId local);
@@ -40,7 +42,8 @@ private:
     void perkIcon(PickupKind kind, Vec2 position, float size, sf::Color color, float rotation = 0);
     void terrain(const Config& config, const Terrain& map);
     void effects();
-    void flame(Vec2 position, float size, float phase);
+    void flame(Vec2 position, float size, float phase, bool blue = false);
+    void tankWear(const Tank& tank, const Config& config, const Terrain& map, float time);
     void glow(Vec2 position, float radius, sf::Color color, float opacity);
     void ring(Vec2 position, float radius, sf::Color color, float start = 0, float sweep = 2*pi, float squash = 1, float tilt = 0);
     void weaponProjectile(const Projectile& projectile, const Config& config, const std::vector<Vec2>& trail);
@@ -54,6 +57,8 @@ private:
     struct Burst { Vec2 position; sf::Color color; float age{}, duration{}, radius{}; };
     struct BeamEffect { Vec2 from, to; sf::Color color; float age{}; };
     struct WeaponEffect { Vec2 position; EventKind kind; float age{}, duration{}, radius{}, intensity{}; std::uint32_t seed{}; Vec2 normal{0,-1}; };
+    struct ArmorShard { Vec2 position, velocity; float age{}, spin{}; };
+    std::vector<ArmorShard> armorShards_;
     std::vector<Particle> particles_;
     std::vector<Burst> bursts_;
     std::vector<BeamEffect> beams_;

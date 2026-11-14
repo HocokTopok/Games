@@ -12,6 +12,8 @@ public:
     bool setSeat(PlayerId actor, PlayerId target, std::uint8_t seat);
     bool setBotWeapon(PlayerId actor, PlayerId target, WeaponKind weapon);
     bool setWeapon(PlayerId id, WeaponKind weapon);
+    bool confirmWeapon(PlayerId id, bool confirmed);
+    bool setGadget(PlayerId id, GadgetKind gadget);
     bool setMap(PlayerId id, std::uint8_t map);
     void setReady(PlayerId id, bool ready);
     void setInput(PlayerId id, Input input);

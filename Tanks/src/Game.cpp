@@ -21,12 +21,14 @@ void Game::play() {
     auto config = config_; if (!config.teams) config.playerLimit=2;
     solo_ = std::make_unique<GameSession>(config);
     solo_->addPlayer("PILOT 01"); if (!config.teams) solo_->addPlayer("SENTINEL",true);
-    if (config.loadoutSelection) solo_->setWeapon(1,WeaponKind::Mortar);
+    if (config.loadoutSelection) solo_->setBotWeapon(0,1,WeaponKind::Mortar);
     solo_->setReady(1,true);
     if (options_.demo || !config.loadoutSelection) {
-        if (config.loadoutSelection) solo_->setWeapon(0,WeaponKind::Ricochet);
+        if (config.loadoutSelection) {
+            solo_->setMap(0,config.mapId); solo_->setWeapon(0,WeaponKind::Ricochet);
+            solo_->confirmWeapon(0,true); solo_->setGadget(0,GadgetKind::Jetpack);
+        }
         solo_->setReady(0,true);
-        if (config.loadoutSelection) solo_->setMap(0,config.mapId);
         solo_->step();
     }
     state_ = solo_->snapshot(); previousSolo_ = state_;
@@ -110,11 +112,15 @@ void Game::update(float dt) {
         state_ = client_->interpolated();
         if (options_.ready && client_->welcomed() && state_.players.size()>=2) {
             const auto me=std::ranges::find(state_.players,client_->id(),&Player::id);
-            if (me!=state_.players.end() && !autoReadySent_) {
-                if (activeConfig().loadoutSelection) client_->weapon(client_->id()==0 ? WeaponKind::Ricochet : WeaponKind::Mortar);
-                client_->ready(true); autoReadySent_=true;
+            if (me!=state_.players.end()) {
+                if (activeConfig().loadoutSelection) {
+                    if (!state_.mapSelected && client_->id()==0) client_->map(config_.mapId);
+                    else if (state_.mapSelected && !me->weaponChosen) client_->weapon(client_->id()==0 ? WeaponKind::Ricochet : WeaponKind::Mortar);
+                    else if (state_.mapSelected && !me->weaponConfirmed) client_->confirmWeapon(true);
+                    else if (state_.mapSelected && !me->gadgetChosen) client_->gadget(GadgetKind::Jetpack);
+                    else if (state_.mapSelected && !me->ready) client_->ready(true);
+                } else if (!autoReadySent_) { client_->ready(true); autoReadySent_=true; }
             }
-            if (activeConfig().loadoutSelection && client_->id()==0 && !state_.mapSelected && std::ranges::all_of(state_.players,[](const auto& p){return p.ready && p.weaponChosen;})) client_->map(config_.mapId);
         }
         if (state_.phase != Phase::Lobby && screen_ == Screen::Lobby) { screen_ = Screen::Playing; renderer_.resetEffects(); }
         if (state_.phase == Phase::Lobby && screen_ == Screen::Playing) { screen_ = Screen::Lobby; paused_ = false; }
@@ -150,6 +156,7 @@ void Game::mainMenu(Vec2 mouse) {
     if (renderer_.button({305,572},{185,62},"JOIN",mouse,clicked_)) { screen_ = Screen::Join; status_.clear(); }
     if (renderer_.button({100,650},{185,60},"SETTINGS",mouse,clicked_)) { settingsReturn_ = Screen::Main; screen_ = Screen::Settings; }
     if (renderer_.button({305,650},{185,60},"EXIT",mouse,clicked_)) window_.close();
+    renderer_.updateBanner(time_);
     renderer_.text("BUILD " TANKWARS_VERSION,{1494,866},14,Renderer::muted,true);
     if (!status_.empty()) renderer_.text(status_,{100,755},19,Renderer::playerColor(1));
 }
@@ -172,8 +179,8 @@ void Game::lobby(Vec2 mouse) {
     const auto& c=activeConfig();
     const auto press=renderer_.uiMouse(pressPixel_), release=renderer_.uiMouse(releasePixel_);
     std::optional<std::uint8_t> dropSeat;
-    const bool allReady=state_.players.size()>=2 && std::ranges::all_of(state_.players,[](const auto& p){return p.ready && p.weaponChosen;});
-    const bool chooseMap=c.loadoutSelection && allReady;
+    const bool chooseMap=c.loadoutSelection && !state_.mapSelected;
+    const bool chooseGadget=c.loadoutSelection && !chooseMap && me && me->weaponConfirmed;
     if (!chooseMap) selectedMap_.reset();
     renderer_.text("LOBBY",{90,42},44,Renderer::white);
     const auto endpoint=solo_ ? "SOLO / SENTINELS" : (server_ ? localAddress_+":"+std::to_string(server_->port()) : address_);
@@ -217,8 +224,18 @@ void Game::lobby(Vec2 mouse) {
         }
         draggedPlayer_=noPlayer;
     }
-    renderer_.text(chooseMap ? "BATTLEFIELD" : "WEAPON",{94,419},21,Renderer::accent);
-    if (!chooseMap) {
+    renderer_.text(chooseMap ? "1 / BATTLEFIELD" : (chooseGadget ? "3 / GADGET" : "2 / WEAPON"),{94,419},21,Renderer::accent);
+    if (chooseGadget) {
+        for (unsigned i=0;i<3;++i) {
+            const float x=90+i*485.f; const auto kind=static_cast<GadgetKind>(i);
+            const bool selected=me->gadgetChosen && me->gadget==kind;
+            renderer_.box({x,458},{455,208},{11,24,39,245},selected ? Renderer::accent : sf::Color{49,71,86});
+            renderer_.gadgetPreview(kind,me->weapon,{x+227,510},time_);
+            if (renderer_.button({x+8,566},{439,72},gadgetName(kind,me->weapon),mouse,clicked_,selected)) {
+                if (client_) client_->gadget(kind); else solo_->setGadget(local,kind);
+            }
+        }
+    } else if (!chooseMap) {
         for (std::size_t i=0;i<selectableWeapons.size();++i) {
             const float x=90+i*290.f; const auto kind=selectableWeapons[i];
             const bool selected=me && me->weaponChosen && me->weapon==kind;
@@ -243,16 +260,20 @@ void Game::lobby(Vec2 mouse) {
         }
     }
     if (chooseMap) {
-        if (renderer_.button({520,705},{480,74},"CHANGE LOADOUT",mouse,clicked_,true,me!=nullptr)) {
-            if (client_) client_->ready(false); else solo_->setReady(local,false);
-            selectedMap_.reset();
-        }
         if (renderer_.button({1020,705},{480,74},"CONFIRM MAP",mouse,clicked_,true,local==0 && selectedMap_.has_value())) {
             if (client_) client_->map(*selectedMap_); else solo_->setMap(local,*selectedMap_);
         }
         if (local!=0) renderer_.text("HOST IS CHOOSING THE BATTLEFIELD",{1020,797},15,Renderer::muted);
-    } else if (renderer_.button({1020,705},{480,74},me && me->ready ? "CHANGE LOADOUT" : "CONFIRM WEAPON",mouse,clicked_,true,me && (me->weaponChosen || !c.loadoutSelection))) {
-        if (client_) client_->ready(!me->ready); else solo_->setReady(local,!me->ready);
+    } else {
+        if (renderer_.button({520,705},{480,74},chooseGadget ? "CHANGE WEAPON" : "CHANGE MAP",mouse,clicked_,false,chooseGadget || local==0)) {
+            if (chooseGadget) { if (client_) client_->confirmWeapon(false); else solo_->confirmWeapon(local,false); }
+            else { if (client_) client_->map(255); else solo_->setMap(local,255); }
+        }
+        if (renderer_.button({1020,705},{480,74},chooseGadget ? (me && me->ready ? "CANCEL READY" : "CONFIRM GADGET") : "CONFIRM WEAPON",mouse,clicked_,true,
+            me && (chooseGadget ? me->gadgetChosen : (me->weaponChosen || !c.loadoutSelection)))) {
+            if (chooseGadget || !c.loadoutSelection) { if (client_) client_->ready(!me->ready); else solo_->setReady(local,!me->ready); }
+            else { if (client_) client_->confirmWeapon(true); else solo_->confirmWeapon(local,true); }
+        }
     }
     if (renderer_.button({90,811},{255,61},solo_ ? "MAIN MENU" : "LEAVE ROOM",mouse,clicked_)) leave();
 }

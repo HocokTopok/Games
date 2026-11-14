@@ -33,9 +33,11 @@ void teams() {
     // Keep the snapshot alive while resolving the bot ID.
     s=game.snapshot(); const auto botId=std::ranges::find(s.players,true,&tw::Player::bot)->id;
     require(!game.setBotWeapon(*id,botId,tw::WeaponKind::Napalm) && game.setBotWeapon(0,botId,tw::WeaponKind::Napalm),"host controls bot weapons");
+    require(game.setMap(0,2),"host chooses map first");
     game.setWeapon(0,tw::WeaponKind::Mortar); game.setWeapon(*id,tw::WeaponKind::Missile);
+    game.confirmWeapon(0,true); game.confirmWeapon(*id,true); game.setGadget(0,tw::GadgetKind::Armor); game.setGadget(*id,tw::GadgetKind::Armor);
     game.setReady(0,true); game.setReady(*id,true);
-    require(game.setMap(0,2),"mixed human and bot roster can deploy"); game.step(); s=game.snapshot();
+    game.step(); s=game.snapshot();
     require(s.phase==tw::Phase::Playing && s.tanks.size()==4,"four tanks spawn");
     std::set<int> locations;
     for (const auto& t : s.tanks) {
@@ -72,9 +74,10 @@ void botCombat() {
 }
 void duelSeats() {
     tw::Config c; c.loadoutSelection=true; tw::GameSession game(c); game.addPlayer("HOST");
-    game.setMode(0,0); game.setWeapon(0,tw::WeaponKind::Mortar);
+    game.setMode(0,0);
     require(game.setSeat(0,0,1),"duel pilots can swap sides"); game.setReady(0,true);
-    require(game.setMap(0,0),"swapped duel can start"); game.step();
+    require(game.setMap(0,0),"swapped duel chooses map");
+    game.setWeapon(0,tw::WeaponKind::Mortar); game.confirmWeapon(0,true); game.setGadget(0,tw::GadgetKind::Armor); game.setReady(0,true); game.step();
     const auto s=game.snapshot(); require(tw::findTank(s,0)->position.x>c.worldWidth/2,"duel starting position follows its lobby seat");
 }
 void timer() {

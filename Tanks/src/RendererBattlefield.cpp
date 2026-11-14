@@ -65,21 +65,28 @@ void Renderer::decorations(const Config& c,const Terrain& map,float time) {
         for (auto p : points) shape.setPoint(i++,point(p));
         shape.setFillColor(color); window_.draw(shape);
     };
-    const int count=c.mapId==1 ? 68 : (c.mapId==3 ? 30 : 24);
+    const int count=c.mapId==1 ? 36 : (c.mapId==3 ? 24 : 24);
     for (int i=0;i<count;++i) {
         const float x=static_cast<float>((i*173+53)%static_cast<int>(c.worldWidth));
         const float y=map.height(x)+2, size=38+(i*37)%70;
         if (c.mapId==1) {
-            line({x,y},{x-3,y-size},{48,52,43},5);
-            line({x+1,y-2},{x-2,y-size},{111,108,76,180},1.3f);
-            for (int tier=0;tier<4;++tier) {
-                const float top=y-size-12+tier*size*0.19f, w=14+tier*8.f;
-                polygon({{x,top},{x-w,top+size*0.43f},{x+w,top+size*0.43f}},i%2 ? colors.foliage : sf::Color{38,79,63});
-                line({x-w+3,top+size*0.43f},{x+3,top+6},{89,120,91,55});
-                for (int branch=1;branch<=4;++branch) {
-                    const float yy=top+size*(0.10f+branch*0.065f), reach=w*(0.12f+branch*0.17f);
-                    line({x-reach,yy+6},{x,yy},{105,158,116,150},1.3f);
-                    line({x,yy},{x+reach,yy+7},{14,50,45,175},1.8f);
+            const float h=size*(0.8f+(i%4)*0.12f), lean=(i%5-2)*1.6f;
+            const float width=0.22f+(i%3)*0.065f;
+            line({x,y},{x+lean,y-h},{72,72,48},4);
+            const sf::Color leaf=i%3==0 ? sf::Color{37,115,78} : (i%3==1 ? sf::Color{44,137,91} : sf::Color{28,97,79});
+            if (i%5==0) {
+                const Vec2 crown{x+lean,y-h*0.73f};
+                const float radius=h*0.27f;
+                circle(crown+Vec2{-radius*0.65f,0},radius*0.78f,leaf);
+                circle(crown+Vec2{radius*0.6f,-radius*0.12f},radius*0.86f,leaf);
+                circle(crown+Vec2{0,-radius*0.7f},radius,{45,130,83});
+                circle(crown+Vec2{-radius*0.28f,-radius*0.95f},radius*0.62f,{64,151,95});
+            } else {
+                const int tiers=2+i%2;
+                for (int tier=0;tier<tiers;++tier) {
+                    const float top=y-h-9+tier*h*0.25f, w=h*width*(0.55f+tier*0.3f), cx=x+lean*(1-tier*0.25f);
+                    polygon({{cx,top},{cx-w,top+h*0.49f},{cx+w*0.87f,top+h*0.49f}},leaf);
+                    polygon({{cx,top+3},{cx-w,top+h*0.49f},{cx,top+h*0.43f}},{62,153,100,125});
                 }
             }
         } else if (c.mapId==2) {
@@ -211,11 +218,11 @@ void Renderer::foregroundFog(const Config& c,const Terrain& map,float time) {
         const float phase=bank*2.37f;
         const float x=c.worldWidth*centers[bank]+std::sin(time*0.17f+phase)*95+std::sin(time*0.43f+phase*1.7f)*28;
         const float surge=0.5f+0.5f*std::sin(time*0.29f+phase+0.8f*std::sin(time*0.13f+bank));
-        const float density=0.08f+0.92f*std::pow(surge,1.6f);
-        const float width=150+bank%3*40.f;
+        const float density=0.18f+0.82f*std::pow(surge,1.6f);
+        const float width=205+bank%3*48.f;
         const float floor=map.height(x);
         for (int layer=0;layer<4;++layer) {
-            const float height=15+layer*6.f, altitude=10+layer*17.f;
+            const float height=21+layer*8.f, altitude=12+layer*21.f;
             sf::VertexArray mist(sf::PrimitiveType::Triangles);
             const auto vertex=[&](float u,float v) {
                 const float xx=x+u*width;
@@ -255,6 +262,7 @@ void Renderer::scenery(const Config& c,float time,bool showcase,const Snapshot* 
             cloud.setFillColor(opacity(colors.horizon,c.mapId==0 ? 19.f : 13.f)); window_.draw(cloud);
         }
     }
+    auto map=state ? MapFactory::create(c,state->terrain) : MapFactory::create(c);
     for (int layer=0;layer<3;++layer) {
         sf::VertexArray hills(sf::PrimitiveType::TriangleStrip);
         for (float x=-20;x<=c.worldWidth+20;x+=15) {
@@ -262,8 +270,9 @@ void Renderer::scenery(const Config& c,float time,bool showcase,const Snapshot* 
             hills.append({{x,y},opacity(colors.distant,105+layer*35.f)}); hills.append({{x,c.worldHeight},colors.deep});
         }
         window_.draw(hills);
-        for (int i=0;i<55;++i) {
-            const float x=i*c.worldWidth/54, y=c.groundHeight-105+layer*30+45*std::sin(x*0.003f+layer*2)+19*std::sin(x*0.009f+layer);
+        const int silhouettes=c.mapId==1 ? 29 : (c.mapId==3 ? 27 : 55);
+        for (int i=0;i<silhouettes;++i) {
+            const float x=i*c.worldWidth/(silhouettes-1), y=c.groundHeight-105+layer*30+45*std::sin(x*0.003f+layer*2)+19*std::sin(x*0.009f+layer);
             const sf::Color ink=opacity(colors.distant,125+layer*35.f);
             if (c.mapId==1 || c.mapId==2) {
                 const float h=20+(i*31+layer*17)%44;
@@ -274,16 +283,19 @@ void Renderer::scenery(const Config& c,float time,bool showcase,const Snapshot* 
                     line({x,top},{x+4+tier*3.f,top+11},ink,4+layer);
                 } else for (float side : {-1.f,1.f}) line({x,y-h*0.45f},{x+side*12,y-h*0.8f},ink,2);
             } else if (c.mapId==3) {
-                const float h=25+(i*23+layer*31)%70;
-                box({x,y-h},{c.worldWidth/70,h+12},ink);
-                if (i%4==0) { line({x+8,y-h},{x+8,y-h-25},ink,5); line({x,y-h-8},{x+15,y-h-8},ink,2); }
-                for (int row=0;row<3;++row) box({x+5,y-h+8+row*15.f},{3,5},opacity(colors.horizon,80));
+                if (layer!=1) continue;
+                const float w=40+(i*13)%40, base=std::max({map->height(x),map->height(x+w/2),map->height(x+w)})+8;
+                if (base<c.worldHeight*0.71f || std::abs(map->height(x)-map->height(x+w))>20) continue;
+                const float h=45+(i*23)%80;
+                // Foundations continue down into the terrain, including after craters.
+                box({x,base-h},{w,c.worldHeight-(base-h)},ink);
+                if (i%4==0) { line({x+8,base-h},{x+8,base-h-25},ink,5); line({x,base-h-8},{x+15,base-h-8},ink,2); }
+                for (int row=0;row<3;++row) box({x+5,base-h+8+row*15.f},{3,5},opacity(colors.horizon,80));
             } else if (i%4==0) {
                 line({x,y},{x+45,y-5},opacity(colors.edge,32),2);
             }
         }
     }
-    auto map=state ? MapFactory::create(c,state->terrain) : MapFactory::create(c);
     decorations(c,*map,time);
     terrain(c,*map);
     // Thin drifting dust, fog and ash in front of the terrain, with no gameplay collision.

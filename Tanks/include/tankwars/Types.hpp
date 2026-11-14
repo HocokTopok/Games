@@ -37,11 +37,13 @@ struct Input {
     float move{}, aim{-0.7f}, powerDelta{};
     bool fire{};
     float lift{};
+    bool gadget{};
 };
 enum class Phase : std::uint8_t { Lobby, Playing, Victory };
-enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike, MissileImpact, PlaneCrash, BombImpact };
+enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike, MissileImpact, PlaneCrash, BombImpact, ArmorBreak, ClusterBurst };
 // GrowingOrb is retained only for the legacy preset/protocol; the menu has one ricochet weapon.
 enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb, Ricochet, Flare, Missile };
+enum class GadgetKind : std::uint8_t { Jetpack, Armor, Specialist };
 struct GameEvent {
     std::uint32_t id{};
     EventKind kind{};
@@ -58,6 +60,8 @@ struct Player {
     WeaponKind weapon{WeaponKind::Cannon};
     bool weaponChosen{};
     std::uint8_t seat{};
+    GadgetKind gadget{GadgetKind::Jetpack};
+    bool weaponConfirmed{}, gadgetChosen{};
 };
 struct Tank {
     PlayerId id{};
@@ -72,6 +76,9 @@ struct Tank {
     float damageRemaining{}, shieldRemaining{}, healIndicator{};
     bool inMud{};
     Vec2 velocity{};
+    GadgetKind gadget{GadgetKind::Jetpack};
+    bool hasGadget{}, gadgetHeld{}, jetActive{}, fuelLocked{}, specialistArmed{}, specialistUsed{}, blueBurn{};
+    float armor{}, fuel{1}, gadgetCooldown{}, gadgetRemaining{};
     bool alive() const { return hp > 0.f; }
     float healthRatio() const { return std::clamp(hp / std::max(1.f,maxHp),0.f,1.f); }
     Vec2 pivot() const { return position + rotate({0, -12}, bodyAngle); }
@@ -86,6 +93,8 @@ struct Projectile {
     WeaponKind weapon{WeaponKind::Cannon};
     std::uint8_t bounces{};
     float damageScale{1};
+    bool blueFire{}, empowered{}, clusterPellet{};
+    float travel{};
 };
 struct LaserBeam {
     std::uint32_t id{};
@@ -98,12 +107,14 @@ struct FirePatch {
     Vec2 position{};
     float remaining{}, radius{};
     float damageScale{1};
+    bool blueFire{};
 };
 struct SkyStrike {
     std::uint32_t id{};
     PlayerId owner{};
     Vec2 position{};
     float age{}, radius{}, damageScale{1};
+    bool empowered{};
 };
 enum class PickupKind : std::uint8_t { Health, Damage, Shield };
 struct SupplyDrop {
@@ -136,7 +147,7 @@ struct Snapshot {
     std::vector<LaserBeam> lasers;
     std::vector<FirePatch> fires;
     std::vector<SkyStrike> skyStrikes;
-    bool detailedWeapons{};
+    bool detailedWeapons{}, gadgetData{};
     bool battlefieldData{}, mapSelected{};
     std::uint8_t mapId{};
     std::vector<float> terrain;

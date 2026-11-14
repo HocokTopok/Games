@@ -17,11 +17,13 @@ namespace tw::net {
 namespace {
 using Clock = std::chrono::steady_clock;
 using Status = sf::Socket::Status;
-enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, Rematch, Error, Weapon, Map, Mode, Seat, BotWeapon };
+enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, Rematch, Error, Weapon, Map, Mode, Seat, BotWeapon, WeaponConfirm, Gadget };
 constexpr std::uint32_t magic = 0x54414e4b;
 constexpr std::uint32_t extensionMagic = 0x54575831;
 constexpr std::uint16_t extensionVersion = 2;
-constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2, battlefieldCapability = 4, skyCapability = 8, missileCapability = 16, rulesCapability = 32, airRaidCapability = 64;
+constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2, battlefieldCapability = 4, skyCapability = 8, missileCapability = 16, rulesCapability = 32, airRaidCapability = 64, gadgetCapability = 128;
+constexpr std::uint32_t gadgetMagic=0x47445731;
+constexpr std::uint16_t gadgetVersion=1;
 constexpr std::uint32_t airRaidMagic=0x41495231;
 constexpr std::uint16_t airRaidVersion=1;
 constexpr std::uint32_t rulesMagic=0x52555731;
@@ -167,6 +169,13 @@ void writeState(sf::Packet& p, const Snapshot& s, bool nativeHealth) {
     p << s.plane.hp << s.plane.direction << s.plane.fallSpeed << s.plane.angle << s.plane.crashing;
     p << airRaidMagic << airRaidVersion << s.plane.bombing << static_cast<std::uint16_t>(s.bombs.size());
     for (const auto& bomb : s.bombs) p << bomb.id << bomb.position << bomb.velocity << bomb.age;
+    p << gadgetMagic << gadgetVersion;
+    for (const auto& player : s.players) p << static_cast<std::uint8_t>(player.gadget) << player.weaponConfirmed << player.gadgetChosen;
+    for (const auto& t : s.tanks) p << static_cast<std::uint8_t>(t.gadget) << t.hasGadget << t.armor << t.fuel << t.jetActive
+        << t.gadgetCooldown << t.gadgetRemaining << t.specialistArmed << t.specialistUsed << t.blueBurn;
+    for (const auto& v : s.projectiles) p << v.blueFire << v.empowered << v.clusterPellet << v.travel;
+    for (const auto& f : s.fires) p << f.blueFire;
+    for (const auto& v : s.skyStrikes) p << v.empowered;
 }
 bool readState(sf::Packet& p, Snapshot& s) {
     std::uint8_t phase{}, count{};
@@ -288,7 +297,7 @@ bool readState(sf::Packet& p, Snapshot& s) {
             }
             for (auto& event : s.events) {
                 std::uint8_t kind{}; p >> kind >> event.radius >> event.intensity;
-                if (!p || kind>static_cast<std::uint8_t>(EventKind::BombImpact) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
+                if (!p || kind>static_cast<std::uint8_t>(EventKind::ClusterBurst) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
                     !std::isfinite(event.intensity) || event.intensity<0 || event.intensity>1) return false;
                 event.kind=static_cast<EventKind>(kind);
             }
@@ -307,8 +316,8 @@ bool readState(sf::Packet& p, Snapshot& s) {
                     !std::isfinite(tank.shieldRemaining) || tank.shieldRemaining<0 || tank.shieldRemaining>10 ||
                     !std::isfinite(tank.healIndicator) || tank.healIndicator<0 || tank.healIndicator>1.5f) return false;
             }
-            for (auto& projectile : s.projectiles) { p >> projectile.damageScale; if (!p || (projectile.damageScale!=1 && projectile.damageScale!=1.5f)) return false; }
-            for (auto& fire : s.fires) { p >> fire.damageScale; if (!p || (fire.damageScale!=1 && fire.damageScale!=1.5f)) return false; }
+            for (auto& projectile : s.projectiles) { p >> projectile.damageScale; if (!p || (projectile.damageScale!=1 && projectile.damageScale!=1.5f && projectile.damageScale!=2.25f)) return false; }
+            for (auto& fire : s.fires) { p >> fire.damageScale; if (!p || (fire.damageScale!=1 && fire.damageScale!=1.5f && fire.damageScale!=2.25f)) return false; }
             p >> n; if (!p || n>1001) return false;
             s.terrain.resize(n);
             for (auto& y : s.terrain) { p >> y; if (!p || !std::isfinite(y) || y<100 || y>2000) return false; }
@@ -326,8 +335,8 @@ bool readState(sf::Packet& p, Snapshot& s) {
             s.skyStrikes.resize(count);
             for (auto& strike : s.skyStrikes) {
                 p >> strike.id >> strike.owner >> strike.position >> strike.age >> strike.radius >> strike.damageScale;
-                if (!p || strike.owner>=maxPlayers || !finite(strike.position) || !std::isfinite(strike.age) || strike.age<0 || strike.age>15 ||
-                    !std::isfinite(strike.radius) || strike.radius<20 || strike.radius>200 || (strike.damageScale!=1 && strike.damageScale!=1.5f)) return false;
+                if (!p || strike.owner>=maxPlayers || !finite(strike.position) || !std::isfinite(strike.age) || strike.age<0 || strike.age>22.5f ||
+                    !std::isfinite(strike.radius) || strike.radius<20 || strike.radius>400 || (strike.damageScale!=1 && strike.damageScale!=1.5f)) return false;
             }
         } else if (marker==missileMagic && version==missileVersion) {
             p >> n; if (!p || n!=s.events.size()) return false;
@@ -358,6 +367,22 @@ bool readState(sf::Packet& p, Snapshot& s) {
                 p >> bomb.id >> bomb.position >> bomb.velocity >> bomb.age;
                 if (!p || !finite(bomb.position) || !finite(bomb.velocity) || !std::isfinite(bomb.age) || bomb.age<0 || bomb.age>20) return false;
             }
+        } else if (marker==gadgetMagic && version==gadgetVersion) {
+            s.gadgetData=true;
+            for (auto& player : s.players) {
+                std::uint8_t kind{}; p >> kind >> player.weaponConfirmed >> player.gadgetChosen;
+                if (!p || kind>2) return false;
+                player.gadget=static_cast<GadgetKind>(kind);
+            }
+            for (auto& t : s.tanks) {
+                std::uint8_t kind{}; p >> kind >> t.hasGadget >> t.armor >> t.fuel >> t.jetActive >> t.gadgetCooldown >> t.gadgetRemaining >> t.specialistArmed >> t.specialistUsed >> t.blueBurn;
+                if (!p || kind>2 || !std::isfinite(t.armor) || t.armor<0 || t.armor>250 || !std::isfinite(t.fuel) || t.fuel<0 || t.fuel>1 ||
+                    !std::isfinite(t.gadgetCooldown) || t.gadgetCooldown<0 || t.gadgetCooldown>20 || !std::isfinite(t.gadgetRemaining) || t.gadgetRemaining<0 || t.gadgetRemaining>10) return false;
+                t.gadget=static_cast<GadgetKind>(kind);
+            }
+            for (auto& v : s.projectiles) { p >> v.blueFire >> v.empowered >> v.clusterPellet >> v.travel; if (!p || !std::isfinite(v.travel) || v.travel<0) return false; }
+            for (auto& f : s.fires) p >> f.blueFire;
+            for (auto& v : s.skyStrikes) p >> v.empowered;
         } else break;
     }
     return static_cast<bool>(p);
@@ -429,7 +454,7 @@ struct Server::Impl {
     struct Peer {
         Channel channel;
         PlayerId id{noPlayer};
-        bool nativeHealth{}, battlefield{}, sky{}, missile{}, rules{}, airRaid{};
+        bool nativeHealth{}, battlefield{}, sky{}, missile{}, rules{}, airRaid{}, gadgets{};
         Clock::time_point lastInput{Clock::now()};
     };
     std::vector<std::unique_ptr<Peer>> peers;
@@ -460,8 +485,9 @@ struct Server::Impl {
                 peer.missile = marker == capabilityMagic && (capabilities & missileCapability) != 0;
                 peer.rules = marker == capabilityMagic && (capabilities & rulesCapability) != 0;
                 peer.airRaid = marker == capabilityMagic && (capabilities & airRaidCapability) != 0;
+                peer.gadgets = marker == capabilityMagic && (capabilities & gadgetCapability) != 0;
             }
-            if (config.loadoutSelection && (!peer.battlefield || !peer.sky || !peer.missile || !peer.rules || !peer.airRaid)) {
+            if (config.loadoutSelection && (!peer.battlefield || !peer.sky || !peer.missile || !peer.rules || !peer.airRaid || !peer.gadgets)) {
                 auto error=packet(Message::Error); error << std::string("Incompatible game version.");
                 peer.channel.queue(std::move(error)); peer.channel.flush(); peer.channel.alive=false; return;
             }
@@ -485,6 +511,7 @@ struct Server::Impl {
             writeMissileConfig(welcome,config.weapon);
             welcome << rulesMagic << rulesVersion;
             welcome << airRaidMagic << airRaidVersion;
+            welcome << gadgetMagic << gadgetVersion;
             peer.channel.queue(std::move(welcome));
             return;
         }
@@ -495,12 +522,16 @@ struct Server::Impl {
             if (p && !p.endOfPacket()) p >> in.lift;
             else in.lift = in.powerDelta;
             if (!p || !std::isfinite(in.move) || !std::isfinite(in.aim) || !std::isfinite(in.powerDelta) || !std::isfinite(in.lift)) { peer.channel.alive = false; return; }
+            if (p && !p.endOfPacket()) p >> in.gadget;
+            if (!p) { peer.channel.alive=false; return; }
             in.move = std::clamp(in.move, -1.f, 1.f); in.powerDelta = std::clamp(in.powerDelta, -1.f, 1.f);
             in.lift = std::clamp(in.lift, -1.f, 1.f);
             in.aim = std::remainder(in.aim, 2 * pi);
             session.setInput(peer.id, in); peer.lastInput = Clock::now(); break;
         }
         case Message::Weapon: { std::uint8_t value{}; if (p >> value) session.setWeapon(peer.id,static_cast<WeaponKind>(value)); break; }
+        case Message::WeaponConfirm: { bool value{}; if (p >> value) session.confirmWeapon(peer.id,value); break; }
+        case Message::Gadget: { std::uint8_t value{}; if (p >> value) session.setGadget(peer.id,static_cast<GadgetKind>(value)); break; }
         case Message::Map: { std::uint8_t value{}; if (p >> value) session.setMap(peer.id,value); break; }
         case Message::Ready: { bool value{}; if (p >> value) session.setReady(peer.id, value); break; }
         case Message::Color: { std::uint8_t value{}; if (p >> value) session.setColor(peer.id, value); break; }
@@ -588,7 +619,7 @@ bool Client::connect(const std::string& address, unsigned short port, const std:
     }
     channel->socket->setBlocking(false); impl_->channel = std::move(channel);
     auto hello = packet(Message::Hello);
-    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability|battlefieldCapability|skyCapability|missileCapability|rulesCapability|airRaidCapability);
+    hello << magic << protocolVersion << name.substr(0,18) << capabilityMagic << (healthCapability|weaponCapability|battlefieldCapability|skyCapability|missileCapability|rulesCapability|airRaidCapability|gadgetCapability);
     impl_->queue(std::move(hello));
     return true;
 }
@@ -604,7 +635,7 @@ void Client::poll() {
         if (type == static_cast<std::uint8_t>(Message::Welcome)) {
             p >> impl_->id;
             valid = impl_->id < maxPlayers && readConfig(p, impl_->config);
-            bool missileConfig=false, rulesConfig=false, airRaidConfig=false;
+            bool missileConfig=false, rulesConfig=false, airRaidConfig=false, gadgetConfig=false;
             if (valid && !p.endOfPacket()) {
                 std::uint32_t marker{}; std::uint16_t version{};
                 p >> marker >> version;
@@ -631,6 +662,7 @@ void Client::poll() {
                         } else if (marker==missileMagic && version==missileVersion) {
                             readMissileConfig(p,impl_->config.weapon); missileConfig=static_cast<bool>(p);
                         } else if (marker==rulesMagic && version==rulesVersion) { rulesConfig=true;
+                        } else if (marker==gadgetMagic && version==gadgetVersion) { gadgetConfig=true;
                         } else if (marker==airRaidMagic && version==airRaidVersion) { airRaidConfig=true;
                         } else break;
                     }
@@ -638,7 +670,7 @@ void Client::poll() {
                     if (valid) try { impl_->config.validate(); } catch (...) { valid = false; }
                 }
             }
-            if (valid && impl_->config.loadoutSelection && (!missileConfig || !rulesConfig || !airRaidConfig)) {
+            if (valid && impl_->config.loadoutSelection && (!missileConfig || !rulesConfig || !airRaidConfig || !gadgetConfig)) {
                 impl_->error="Incompatible game version."; valid=false;
             }
         } else if (type == static_cast<std::uint8_t>(Message::State) && impl_->id != noPlayer) {
@@ -647,7 +679,7 @@ void Client::poll() {
                 impl_->error="Incomplete graphics data.";
                 valid=false;
             }
-            if (valid && impl_->config.loadoutSelection && !s.battlefieldData) valid=false;
+            if (valid && impl_->config.loadoutSelection && (!s.battlefieldData || !s.gadgetData)) valid=false;
             if (valid) {
                 if (s.modernRules) { impl_->config.teams=s.teamBattle; impl_->config.playerLimit=s.roomSize; }
                 if (s.mapSelected) {
@@ -676,9 +708,11 @@ void Client::poll() {
     ch.flush();
     if (!ch.alive && impl_->error.empty()) impl_->error = "Connection lost.";
 }
-void Client::sendInput(Input in) { auto p = packet(Message::Input); p << in.move << in.aim << in.powerDelta << in.fire << in.lift; impl_->queue(std::move(p)); }
+void Client::sendInput(Input in) { auto p = packet(Message::Input); p << in.move << in.aim << in.powerDelta << in.fire << in.lift << in.gadget; impl_->queue(std::move(p)); }
 void Client::ready(bool value) { auto p = packet(Message::Ready); p << value; impl_->queue(std::move(p)); }
 void Client::weapon(WeaponKind value) { auto p=packet(Message::Weapon); p << static_cast<std::uint8_t>(value); impl_->queue(std::move(p)); }
+void Client::confirmWeapon(bool value) { auto p=packet(Message::WeaponConfirm); p << value; impl_->queue(std::move(p)); }
+void Client::gadget(GadgetKind value) { auto p=packet(Message::Gadget); p << static_cast<std::uint8_t>(value); impl_->queue(std::move(p)); }
 void Client::map(std::uint8_t value) { auto p=packet(Message::Map); p << value; impl_->queue(std::move(p)); }
 void Client::color(std::uint8_t value) { auto p = packet(Message::Color); p << value; impl_->queue(std::move(p)); }
 void Client::mode(std::uint8_t value) { auto p=packet(Message::Mode); p << value; impl_->queue(std::move(p)); }

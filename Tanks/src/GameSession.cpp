@@ -21,7 +21,7 @@ std::optional<PlayerId> GameSession::addPlayer(std::string name, bool bot) {
     while (std::ranges::any_of(players_,[&](const auto& p){return p.seat==seat;})) ++seat;
     players_.push_back({id,color,static_cast<std::uint8_t>(config_.teams ? seat/(config_.playerLimit/2) : seat),true,false,bot,name.substr(0,18)});
     players_.back().seat=seat;
-    if (bot) { players_.back().weapon=selectableWeapons[(id+1)%selectableWeapons.size()]; players_.back().weaponChosen=true; players_.back().ready=true; }
+    if (bot) { players_.back().weapon=selectableWeapons[(id+1)%selectableWeapons.size()]; players_.back().weaponChosen=true; players_.back().ready=true; players_.back().weaponConfirmed=true; players_.back().gadgetChosen=config_.loadoutSelection; players_.back().gadget=static_cast<GadgetKind>(id%3); }
     if (!bot && config_.teams) { invalidateReady(); fillBots(); }
     return id;
 }
@@ -36,27 +36,45 @@ void GameSession::removePlayer(PlayerId id) {
 bool GameSession::setColor(PlayerId id, std::uint8_t color) {
     if (phase_ != Phase::Lobby || color >= maxPlayers) return false;
     if (std::ranges::any_of(players_, [&](const auto& p) { return p.id != id && p.color == color; })) return false;
-    for (auto& p : players_) if (p.id == id) { p.color = color; p.ready = false; mapSelected_=false; return true; }
+    for (auto& p : players_) if (p.id == id) { p.color = color; p.ready = false; return true; }
     return false;
 }
 bool GameSession::setWeapon(PlayerId id, WeaponKind weapon) {
     if (phase_!=Phase::Lobby || std::ranges::find(selectableWeapons,weapon)==selectableWeapons.end()) return false;
-    for (auto& p : players_) if (p.id==id && p.connected) { p.weapon=weapon; p.weaponChosen=true; p.ready=false; mapSelected_=false; return true; }
+    for (auto& p : players_) if (p.id==id && p.connected) {
+        if (config_.loadoutSelection && !mapSelected_ && !p.bot) return false;
+        p.weapon=weapon; p.weaponChosen=true; p.ready=false; p.weaponConfirmed=false; p.gadgetChosen=false; return true;
+    }
     return false;
 }
 bool GameSession::setMap(PlayerId id, std::uint8_t map) {
-    if (id!=0 || phase_!=Phase::Lobby || map>3 || players_.size()<2 ||
-        !std::ranges::all_of(players_,[](const auto& p) { return p.connected && p.ready && p.weaponChosen; })) return false;
+    if (id!=0 || phase_!=Phase::Lobby) return false;
+    if (map==255) { mapSelected_=false; invalidateReady(); return true; }
+    if (map>3) return false;
     config_=MapFactory::preset(config_,map); config_.validate(); world_.selectMap(config_); mapSelected_=true;
+    invalidateReady();
     return true;
+}
+bool GameSession::confirmWeapon(PlayerId id, bool confirmed) {
+    if (phase_!=Phase::Lobby || (config_.loadoutSelection && !mapSelected_)) return false;
+    for (auto& p : players_) if (p.id==id && p.connected && p.weaponChosen) {
+        p.weaponConfirmed=confirmed; p.ready=false; return true;
+    }
+    return false;
+}
+bool GameSession::setGadget(PlayerId id, GadgetKind gadget) {
+    if (phase_!=Phase::Lobby || static_cast<unsigned>(gadget)>2) return false;
+    for (auto& p : players_) if (p.id==id && p.connected && p.weaponConfirmed) {
+        p.gadget=gadget; p.gadgetChosen=true; p.ready=false; return true;
+    }
+    return false;
 }
 void GameSession::setReady(PlayerId id, bool ready) {
     if (phase_ != Phase::Lobby) return;
-    for (auto& p : players_) if (p.id == id && p.connected && (!config_.loadoutSelection || p.weaponChosen)) { p.ready = ready; if (!ready) mapSelected_=false; }
+    for (auto& p : players_) if (p.id == id && p.connected && (!config_.loadoutSelection || (mapSelected_ && p.weaponConfirmed && p.gadgetChosen))) { p.ready = ready; }
 }
 void GameSession::invalidateReady() {
-    mapSelected_=false;
-    for (auto& p : players_) p.ready=p.bot;
+    for (auto& p : players_) { p.ready=p.bot; p.weaponConfirmed=p.bot; }
 }
 void GameSession::fillBots() {
     if (!config_.teams || players_.empty()) return;
@@ -91,7 +109,7 @@ bool GameSession::setBotWeapon(PlayerId actor,PlayerId target,WeaponKind weapon)
     if (actor!=0 || phase_!=Phase::Lobby) return false;
     const auto p=std::ranges::find(players_,target,&Player::id);
     if (p==players_.end() || !p->bot || !setWeapon(target,weapon)) return false;
-    setReady(target,true); return true;
+    p->weaponConfirmed=true; p->gadgetChosen=true; setReady(target,true); return true;
 }
 void GameSession::setInput(PlayerId id, Input input) { if (id < maxPlayers) inputs_[id] = input; }
 Input GameSession::botInput(const Tank& tank) {
@@ -183,7 +201,8 @@ Input GameSession::botInput(const Tank& tank) {
     const float powerDelta=std::clamp((bestPower-tank.power)/80.f,-1.f,1.f);
     const float tolerance=tank.weapon==WeaponKind::Mortar ? 85.f : (tank.weapon==WeaponKind::Flare ? 65.f : 65.f);
     const bool fire=time>1 && best<tolerance && std::abs(bestPower-tank.power)<65 && std::abs(angleDelta(tank.aim,bestAim))<0.07f;
-    return plan.input={move,bestAim,powerDelta,fire};
+    const bool gadget=tank.hasGadget && (tank.gadget==GadgetKind::Jetpack ? (std::sin(time*0.8f+tank.id)>0.6f && tank.fuel>0.2f) : std::fmod(time+tank.id,3.f)<0.3f);
+    return plan.input={move,bestAim,powerDelta,fire,0,gadget};
 }
 void GameSession::step() {
     if (phase_ == Phase::Lobby) {
@@ -213,7 +232,7 @@ void GameSession::rematch() {
     if (phase_ != Phase::Victory) return;
     phase_ = Phase::Lobby; mapSelected_=false; winner_ = noPlayer; inputs_ = {};
     std::erase_if(players_, [](const auto& p) { return !p.connected; });
-    for (auto& p : players_) p.ready = p.bot;
+    for (auto& p : players_) { p.ready = p.bot; p.weaponConfirmed=p.bot; p.gadgetChosen=p.bot; }
     fillBots();
 }
 Snapshot GameSession::snapshot() const {

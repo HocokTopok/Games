@@ -51,14 +51,15 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
         return;
     }
     if (p.weapon==WeaponKind::Napalm) {
+        const sf::Color hot=p.blueFire ? sf::Color{63,184,255} : sf::Color{255,100,24};
         for (std::size_t i=1;i<trail.size();++i) {
             const float t=static_cast<float>(i)/trail.size();
-            line(trail[i-1],trail[i],fade({255,100,24},t*190),1+t*4);
+            line(trail[i-1],trail[i],fade(hot,t*190),1+t*4);
             if (i%4==0) glow(trail[i],8,{255,139,34},t*55);
         }
-        glow(p.position,24,{255,79,18},100);
-        glow(p.position,11,{255,179,55},180);
-        flame(p.position,7,p.id);
+        glow(p.position,24,hot,100);
+        glow(p.position,11,p.blueFire ? sf::Color{116,222,255} : sf::Color{255,179,55},180);
+        flame(p.position,7,p.id,p.blueFire);
         circle(p.position,3,{255,242,170});
         return;
     }
@@ -133,7 +134,8 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
 }
 void Renderer::skyStrikes(const Config& c,const Snapshot& state) {
     for (const auto& strike : state.skyStrikes) {
-        const float radius=strike.radius, age=strike.age, warmup=c.weapon.skyWarmup;
+        const float radius=strike.radius, age=strike.age, warmup=c.weapon.skyWarmup*(strike.empowered ? 1.5f : 1.f);
+        const float duration=c.weapon.skyDuration*(strike.empowered ? 1.5f : 1.f);
         const auto base=strike.position;
         if (age<warmup) {
             const float t=age/warmup, pulse=0.65f+0.35f*std::sin(age*28);
@@ -145,7 +147,7 @@ void Renderer::skyStrikes(const Config& c,const Snapshot& state) {
             continue;
         }
         const float active=age-warmup;
-        const float envelope=std::min(1.f,active/0.12f)*std::clamp((c.weapon.skyDuration-active)/0.45f,0.f,1.f);
+        const float envelope=std::min(1.f,active/0.12f)*std::clamp((duration-active)/0.45f,0.f,1.f);
         const float pulse=0.94f+0.06f*std::sin(age*37+strike.id);
         // Layers share the authoritative age and seed on Host and Join.
         for (int layer=0;layer<4;++layer) {

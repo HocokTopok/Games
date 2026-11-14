@@ -23,7 +23,7 @@ void bouncingStone() {
     for (unsigned bounce=2;bounce<=3;++bounce) {
         p.position={800,flat.height(800)-tw::Cannon::radius(p,c.weapon)-0.2f}; p.velocity={1000,300};
         r=tw::Physics::advance(p,c.fixedStep,c,flat,{});
-        require(!r.hit && p.bounces==bounce && tw::Cannon::ricochetDamage(bounce)==30+10*bounce,"second and third ground bounces add exactly ten damage");
+        require(!r.hit && p.bounces==bounce && tw::Cannon::ricochetDamage(bounce)==10+15*bounce,"second and third ground bounces add exactly fifteen damage");
     }
     p.position={800,flat.height(800)-tw::Cannon::radius(p,c.weapon)-0.2f}; p.velocity={1000,300};
     r=tw::Physics::advance(p,c.fixedStep,c,flat,{});

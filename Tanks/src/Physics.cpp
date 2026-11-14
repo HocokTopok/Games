@@ -90,7 +90,7 @@ FlightResult advance(Projectile& p, float dt, const Config& c, const Terrain& ma
             if (speed>1) p.velocity=p.velocity*((speed+std::clamp(desired-speed,-120.f*dt,120.f*dt))/speed);
         }
     }
-    const float gravity=(orb || p.weapon==WeaponKind::Missile) ? 0.f : c.gravity*(p.weapon==WeaponKind::Mortar ? c.weapon.mortarGravityScale : (p.weapon==WeaponKind::Flare ? c.weapon.flareGravityScale : 1.f));
+    const float gravity=(orb || p.weapon==WeaponKind::Missile || p.clusterPellet) ? 0.f : c.gravity*(p.weapon==WeaponKind::Mortar ? c.weapon.mortarGravityScale : (p.weapon==WeaponKind::Flare ? c.weapon.flareGravityScale : 1.f));
     const float lifetime=Cannon::lifetime(p,c.weapon);
     float remaining=std::min(dt,std::max(0.f,lifetime-p.age));
     for (int segment=0;segment<4 && remaining>0.000001f;++segment) {
@@ -188,6 +188,9 @@ float missileDamage(Vec2 explosion, const Tank& tank, bool direct, const Config&
 }
 void damage(Tank& tank, float amount, bool lethal) {
     if (!tank.alive() || tank.shieldRemaining > 0) return;
-    tank.hp = lethal ? 0.f : std::max(0.f,tank.hp-std::max(0.f,amount));
+    amount=std::max(0.f,amount);
+    const float absorbed=std::min(tank.armor,amount);
+    tank.armor-=absorbed;
+    tank.hp = lethal ? 0.f : std::max(0.f,tank.hp-(amount-absorbed));
 }
 }
