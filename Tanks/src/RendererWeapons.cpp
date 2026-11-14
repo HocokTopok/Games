@@ -26,15 +26,35 @@ void Renderer::ring(Vec2 position,float radius,sf::Color color,float start,float
     }
     window_.draw(vertices,sf::RenderStates(sf::BlendAdd));
 }
-void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::vector<Vec2>& trail) {
+void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::vector<TrailPoint>& trail) {
+    if (p.clusterPellet) {
+        for (std::size_t i=1;i<trail.size();++i) {
+            const float t=static_cast<float>(i)/trail.size();
+            line(trail[i-1].position,trail[i].position,fade({255,105,18},t*t*220),2.8f);
+            line(trail[i-1].position,trail[i].position,fade({255,199,80},t*t*205),0.9f);
+        }
+        const float angle=std::atan2(p.velocity.y,p.velocity.x);
+        const auto at=[&](Vec2 v) { return p.position+rotate(v,angle); };
+        line(at({-11,0}),at({-38,0}),{255,112,18,190},3.5f);
+        glow(at({-10,0}),13,{255,103,14},100);
+        sf::ConvexShape pellet(5);
+        constexpr std::array<Vec2,5> hull{{{-9,-4.5f},{5,-4.5f},{12,0},{5,4.5f},{-9,4.5f}}};
+        for (std::size_t i=0;i<hull.size();++i) pellet.setPoint(i,point(at(hull[i])));
+        const auto shine=static_cast<std::uint8_t>(52+16*std::sin(p.age*27+p.id*2.3f));
+        pellet.setFillColor({shine,static_cast<std::uint8_t>(shine+3),static_cast<std::uint8_t>(shine+7)});
+        pellet.setOutlineColor({104,112,119}); pellet.setOutlineThickness(0.7f); window_.draw(pellet);
+        line(at({-5,-2.7f}),at({5,-2.7f}),{175,183,190,200},1.1f);
+        line(at({-9,-3}),at({-9,3}),{255,145,45},2);
+        return;
+    }
     if (p.weapon==WeaponKind::Missile) {
         const float angle=std::atan2(p.velocity.y,p.velocity.x);
         const Vec2 ray=direction(angle), normal=direction(angle+pi/2), tail=p.position-ray*11;
         if (settings.particles) for (std::size_t i=0;i<trail.size();++i) {
             const float t=static_cast<float>(i+1)/trail.size();
-            const Vec2 smoke=trail[i]+Vec2{std::sin(i*1.7f+p.id)*3,-(1-t)*12};
+            const Vec2 smoke=trail[i].position+Vec2{std::sin(i*1.7f+p.id)*3,-(1-t)*12};
             circle(smoke,3+(1-t)*9,fade({111,114,123},t*(1-t)*240));
-            if (i>0) line(trail[i-1],trail[i],fade({255,147,61},t*t*125),1+t*2);
+            if (i>0) line(trail[i-1].position,trail[i].position,fade({255,147,61},t*t*125),1+t*2);
         }
         const float flicker=0.85f+0.15f*std::sin(p.age*87+p.id);
         glow(tail,27,{255,89,22},100);
@@ -54,8 +74,8 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
         const sf::Color hot=p.blueFire ? sf::Color{63,184,255} : sf::Color{255,100,24};
         for (std::size_t i=1;i<trail.size();++i) {
             const float t=static_cast<float>(i)/trail.size();
-            line(trail[i-1],trail[i],fade(hot,t*190),1+t*4);
-            if (i%4==0) glow(trail[i],8,{255,139,34},t*55);
+            line(trail[i-1].position,trail[i].position,fade(hot,t*190),1+t*4);
+            if (i%4==0) glow(trail[i].position,8,{255,139,34},t*55);
         }
         glow(p.position,24,hot,100);
         glow(p.position,11,p.blueFire ? sf::Color{116,222,255} : sf::Color{255,179,55},180);
@@ -66,8 +86,8 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
     if (p.weapon==WeaponKind::Flare) {
         for (std::size_t i=0;i<trail.size();++i) {
             const float t=static_cast<float>(i)/trail.size();
-            circle(trail[i]+Vec2{std::sin(i*2.f+p.age*7)*5,-(1-t)*14},3+(1-t)*7,fade({99,89,79},t*80));
-            if (i>0) line(trail[i-1],trail[i],fade({255,145,32},t*t*230),2+t*5);
+            circle(trail[i].position+Vec2{std::sin(i*2.f+p.age*7)*5,-(1-t)*14},3+(1-t)*7,fade({99,89,79},t*80));
+            if (i>0) line(trail[i-1].position,trail[i].position,fade({255,145,32},t*t*230),2+t*5);
         }
         glow(p.position,48,{255,94,17},100);
         glow(p.position,22,{255,185,32},210);
@@ -79,19 +99,21 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
     const bool orb=p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet;
     const float charge=orb ? Cannon::orbCharge(p.age,c.weapon) : 0.f;
     const float radius=Cannon::radius(p,c.weapon);
-    const sf::Color color=orb ? (p.bounces<2 ? sf::Color{146,119,255} : sf::Color{255,163,98}) : sf::Color{255,131,45};
+    constexpr std::array<sf::Color,4> bounceColors{{{169,112,255},{130,218,255},{255,247,207},{255,160,161}}};
+    const auto bounceColor=[&](unsigned bounces) { return bounceColors[std::min(bounces,3u)]; };
+    const sf::Color color=orb ? bounceColor(p.bounces) : sf::Color{255,131,45};
     sf::VertexArray ribbon(sf::PrimitiveType::Triangles);
     for (std::size_t i=1;i<trail.size();++i) {
         const float t=static_cast<float>(i)/static_cast<float>(trail.size());
-        const auto delta=trail[i]-trail[i-1];
+        const auto delta=trail[i].position-trail[i-1].position;
         const auto normal=direction(std::atan2(delta.y,delta.x)+pi/2)*(orb ? radius*0.55f*t : 3.f*t);
-        const auto ink=fade(color,t*t*(orb ? 110 : 145));
-        for (auto v : {trail[i-1]-normal,trail[i-1]+normal,trail[i]+normal,trail[i-1]-normal,trail[i]+normal,trail[i]-normal}) ribbon.append({point(v),ink});
+        const auto ink=fade(p.weapon==WeaponKind::Ricochet ? bounceColor(trail[i].bounces) : color,t*t*(orb ? 165 : 145));
+        for (auto v : {trail[i-1].position-normal,trail[i-1].position+normal,trail[i].position+normal,trail[i-1].position-normal,trail[i].position+normal,trail[i].position-normal}) ribbon.append({point(v),ink});
     }
     window_.draw(ribbon,sf::RenderStates(sf::BlendAdd));
     if (orb) {
         glow(p.position,radius*3.8f,color,40+charge*45+p.bounces*12);
-        glow(p.position,radius*2.1f,{88,202,255},100);
+        glow(p.position,radius*2.1f,color,100);
         circle(p.position,radius,fade({67,51,146},200),fade(color,210));
         sf::VertexArray corona(sf::PrimitiveType::LineStrip);
         for (int i=0;i<=80;++i) {
@@ -117,8 +139,8 @@ void Renderer::weaponProjectile(const Projectile& p,const Config& c,const std::v
     } else {
         if (settings.particles) for (std::size_t i=0;i<trail.size();i+=5) {
             const float t=static_cast<float>(i)/static_cast<float>(trail.size());
-            circle(trail[i]+Vec2{std::sin(i+time_*2)*4,-(1-t)*10},3+(1-t)*6,fade({84,78,88},t*65));
-            if (i%10==0) glow(trail[i],5,{255,148,64},t*65);
+            circle(trail[i].position+Vec2{std::sin(i+time_*2)*4,-(1-t)*10},3+(1-t)*6,fade({84,78,88},t*65));
+            if (i%10==0) glow(trail[i].position,5,{255,148,64},t*65);
         }
         const float angle=std::atan2(p.velocity.y,p.velocity.x);
         glow(p.position,25,{255,122,38},80);

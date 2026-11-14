@@ -38,6 +38,7 @@ public:
     void rematch();
     void mode(std::uint8_t teamSize);
     void seat(PlayerId target, std::uint8_t seat);
+    void botGadget(PlayerId target, GadgetKind gadget);
     void botWeapon(PlayerId target, WeaponKind weapon);
     bool connected() const;
     bool welcomed() const;

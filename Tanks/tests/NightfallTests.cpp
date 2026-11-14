@@ -126,7 +126,7 @@ void aircraft() {
                 s=world.snapshot(); victim.position={std::clamp(s.plane.position.x,35.f,c.worldWidth-35.f),world.map().height(s.plane.position.x)-12};
                 world.step(input); crashed=std::ranges::any_of(world.snapshot().events,[](const auto& e){return e.kind==tw::EventKind::PlaneCrash;});
             }
-            require(crashed && !world.snapshot().plane.active && victim.hp<=810 && victim.hp>=799,"aircraft crashes into terrain with up to 200 area damage");
+            require(crashed && !world.snapshot().plane.active && victim.hp<=850 && victim.hp>=799,"falling aircraft crashes on terrain or tank contact with up to 200 area damage");
         }
         while (world.snapshot().elapsed<62) world.step(input);
         require(world.snapshot().plane.active && world.snapshot().plane.direction==-1,"next plane flies left");

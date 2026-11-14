@@ -207,13 +207,17 @@ void Game::lobby(Vec2 mouse) {
             renderer_.box({x,y},{700,41},hover ? sf::Color{27,48,61,250} : sf::Color{11,25,39,245},hover && draggedPlayer_!=noPlayer ? Renderer::accent : sf::Color{44,65,81});
             if (occupant!=state_.players.end()) {
                 const auto& p=*occupant;
-                renderer_.text(std::to_string(row+1)+"  "+p.name+(p.id==local ? " / YOU" : (p.bot ? " / BOT" : "")),{x+14,y+5},19,Renderer::playerColor(p.color));
-                renderer_.text(p.weaponChosen ? weaponName(p.weapon) : "--",{x+350,y+8},16,Renderer::white);
-                renderer_.text(p.ready ? "READY" : "PREPARING",{x+584,y+9},15,p.ready ? Renderer::accent : Renderer::muted);
-                if (pressed && local==0 && p.bot && press.x>x+340 && press.x<x+570) {
+                renderer_.text(std::to_string(row+1)+"  "+p.name+(p.id==local ? " / YOU" : (p.bot ? " / BOT" : "")),{x+14,y+7},16,Renderer::playerColor(p.color));
+                renderer_.text(p.weaponChosen ? weaponName(p.weapon) : "--",{x+286,y+9},14,Renderer::white);
+                renderer_.text(p.gadgetChosen ? gadgetName(p.gadget,p.weapon) : "--",{x+438,y+9},13,Renderer::accent);
+                renderer_.text(p.ready ? "READY" : "PREPARING",{x+608,y+10},13,p.ready ? Renderer::accent : Renderer::muted);
+                if (pressed && local==0 && p.bot && press.x>x+280 && press.x<x+432) {
                     auto found=std::ranges::find(selectableWeapons,p.weapon);
                     const auto index=found==selectableWeapons.end() ? 0 : (found-selectableWeapons.begin()+1)%selectableWeapons.size();
                     if (client_) client_->botWeapon(p.id,selectableWeapons[index]); else solo_->setBotWeapon(local,p.id,selectableWeapons[index]);
+                } else if (pressed && local==0 && p.bot && press.x>=x+432 && press.x<x+602) {
+                    const auto gadget=p.gadget==GadgetKind::Armor ? GadgetKind::Specialist : GadgetKind::Armor;
+                    if (client_) client_->botGadget(p.id,gadget); else solo_->setBotGadget(local,p.id,gadget);
                 } else if (pressed && (local==0 || p.id==local)) draggedPlayer_=p.id;
             } else renderer_.text("OPEN",{x+14,y+7},18,Renderer::muted);
         }

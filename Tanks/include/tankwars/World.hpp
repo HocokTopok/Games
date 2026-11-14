@@ -27,6 +27,7 @@ private:
     void updateSupplies(float dt);
     void updateBombs(float dt);
     void spawnPlane(bool bombing);
+    void crashPlane();
     void damagePlane(Vec2 center, float radius, float amount);
     bool hitPlane(Vec2 from, Vec2 to, float radius, float& fraction) const;
     Config config_;

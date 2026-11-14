@@ -4,6 +4,17 @@
 #include <random>
 
 namespace tw {
+namespace {
+bool sweepEllipse(Vec2 from,Vec2 to,Vec2 center,Vec2 extent,float& fraction) {
+    Vec2 a=from-center, d=to-from;
+    a={a.x/extent.x,a.y/extent.y}; d={d.x/extent.x,d.y/extent.y};
+    const float aa=dot(d,d), bb=2*dot(a,d), cc=dot(a,a)-1;
+    if (cc<=0) { fraction=0; return true; }
+    if (aa<1e-8f || bb*bb-4*aa*cc<0) return false;
+    fraction=(-bb-std::sqrt(bb*bb-4*aa*cc))/(2*aa);
+    return fraction>=0 && fraction<=1;
+}
+}
 World::World(Config config, std::uint32_t supplySeed) : config_(config) {
     config_.validate(); map_=MapFactory::create(config_);
     randomState_=supplySeed ? supplySeed : std::random_device{}();
@@ -190,12 +201,14 @@ void World::updateSkyStrikes(float dt) {
 }
 void World::splitMissile(PlayerId owner) {
     const auto found=std::ranges::find_if(projectiles_,[&](const auto& p){return p.owner==owner && p.weapon==WeaponKind::Missile;});
-    if (found==projectiles_.end() || projectiles_.size()+14>128) return;
+    if (found==projectiles_.end() || projectiles_.size()+7>128) return;
     const auto missile=*found;
     projectiles_.erase(found);
     emit(EventKind::ClusterBurst,missile.position,owner,22);
-    for (int i=0;i<15;++i) {
-        Projectile pellet{nextProjectile_++,owner,missile.position,rotate(missile.velocity,(-15.f+30.f*i/14)*pi/180)*2,0};
+    for (int i=0;i<8;++i) {
+        randomState_^=randomState_<<13; randomState_^=randomState_>>17; randomState_^=randomState_<<5;
+        const float offset=(-15.f+30.f*(randomState_&0xffffu)/65535.f)*pi/180;
+        Projectile pellet{nextProjectile_++,owner,missile.position,rotate(missile.velocity,offset)*4,0};
         pellet.clusterPellet=true; pellet.damageScale=missile.damageScale;
         projectiles_.push_back(pellet);
     }
@@ -221,15 +234,16 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         tank.gadgetHeld=in.gadget;
         if (!in.gadget) tank.fuelLocked=false;
         tank.jetActive=!tank.fuelLocked && tank.hasGadget && tank.gadget==GadgetKind::Jetpack && in.gadget && tank.fuel>0;
+        const bool refuelOnGround=tank.position.y>=map_->height(tank.position.x)-config_.tankHalfHeight-0.5f && tank.verticalVelocity>=0;
         if (tank.hasGadget && tank.gadget==GadgetKind::Jetpack)
-            tank.fuel=std::clamp(tank.fuel+(tank.jetActive ? -dt/2.f : dt/5.f),0.f,1.f);
+            tank.fuel=std::clamp(tank.fuel+(tank.jetActive ? -dt/2.f : (refuelOnGround ? dt/5.f : 0.f)),0.f,1.f);
         if (tank.jetActive && tank.fuel<=0) tank.fuelLocked=true;
         if (activate && tank.hasGadget && tank.gadget==GadgetKind::Specialist) {
             if (tank.weapon==WeaponKind::Missile) splitMissile(tank.id);
             if (tank.gadgetCooldown<=0 && (tank.weapon==WeaponKind::Napalm || tank.weapon==WeaponKind::Ricochet)) {
-                tank.gadgetRemaining=tank.weapon==WeaponKind::Napalm ? 10.f : 5.f;
+                tank.gadgetRemaining=5.f;
                 tank.gadgetCooldown=tank.weapon==WeaponKind::Napalm ? 15.f : 20.f;
-                if (tank.weapon==WeaponKind::Ricochet) tank.reload*=0.5f;
+                if (tank.weapon==WeaponKind::Ricochet) tank.reload/=3.f;
             }
             if (tank.weapon==WeaponKind::Flare && !tank.specialistUsed) { tank.specialistArmed=true; tank.specialistUsed=true; }
         }
@@ -259,6 +273,10 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
             tank.bodyAngle = approachAngle(tank.bodyAngle, tank.position.y >= floor - 0.5f ? map_->slope(x) : 0.f, dt * 4);
         }
         tank.velocity=(tank.position-previousPosition)/dt;
+        float contact=0;
+        if (plane_.active && sweepEllipse(previousPosition,tank.position,plane_.position,
+            {53+config_.tankHalfWidth,23+config_.tankHalfHeight},contact)) crashPlane();
+        if (!tank.alive()) continue;
         tank.aim = approachAngle(tank.aim, Cannon::firingAngle(tank.weapon,std::remainder(in.aim, 2 * pi)), config_.turretSpeed * dt);
         if (tank.weapon != WeaponKind::Laser) tank.power = std::clamp(tank.power + std::clamp(in.powerDelta, -1.f, 1.f) * config_.powerSpeed * dt,
                                                 config_.weapon.minPower, config_.weapon.maxPower);
@@ -267,7 +285,7 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         bool triple=false;
         if (in.fire && tank.reload<=0 && tank.weapon==WeaponKind::Mortar && tank.hasGadget && tank.gadget==GadgetKind::Specialist) {
             randomState_^=randomState_<<13; randomState_^=randomState_>>17; randomState_^=randomState_<<5;
-            triple=randomState_%5==0;
+            triple=randomState_%10==0;
         }
         const std::size_t pellets = tank.weapon == WeaponKind::Napalm || triple ? 3 : 1;
         const bool guiding=tank.weapon==WeaponKind::Missile && std::ranges::any_of(projectiles_,[&](const auto& p) { return p.owner==tank.id && p.weapon==WeaponKind::Missile; });
@@ -296,7 +314,7 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
                     projectiles_.push_back(p);
                 }
                 if (tank.weapon==WeaponKind::Flare) tank.specialistArmed=false;
-                tank.reload = Cannon::reload(tank.weapon,config_.weapon)*(tank.weapon==WeaponKind::Ricochet && tank.gadgetRemaining>0 ? 0.5f : 1.f);
+                tank.reload = Cannon::reload(tank.weapon,config_.weapon)*(tank.weapon==WeaponKind::Ricochet && tank.gadgetRemaining>0 ? 1.f/3.f : 1.f);
                 emit(EventKind::Shot, projectiles_.back().position, tank.id);
             }
             tank.recoil = 1;
@@ -339,14 +357,19 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
 }
 bool World::hitPlane(Vec2 from, Vec2 to, float radius, float& fraction) const {
     if (!plane_.active || plane_.crashing) return false;
-    const Vec2 extent{53+radius,23+radius};
-    Vec2 a=from-plane_.position, d=to-from;
-    a={a.x/extent.x,a.y/extent.y}; d={d.x/extent.x,d.y/extent.y};
-    const float aa=dot(d,d), bb=2*dot(a,d), cc=dot(a,a)-1;
-    if (cc<=0) { fraction=0; return true; }
-    if (aa<1e-8f || bb*bb-4*aa*cc<0) return false;
-    fraction=(-bb-std::sqrt(bb*bb-4*aa*cc))/(2*aa);
-    return fraction>=0 && fraction<=1;
+    return sweepEllipse(from,to,plane_.position,{53+radius,23+radius},fraction);
+}
+void World::crashPlane() {
+    if (!plane_.active) return;
+    plane_.active=false; plane_.hp=0;
+    constexpr float radius=170;
+    emit(EventKind::PlaneCrash,plane_.position,noPlayer,radius);
+    map_->crater(plane_.position,125,52);
+    for (auto& tank : tanks_) if (tank.alive()) {
+        const float damage=Physics::areaDamage(plane_.position,tank,radius,200,config_);
+        if (damage>0) Physics::damage(tank,1+199*damage/200);
+        if (!tank.alive()) emit(EventKind::Destroyed,tank.position,tank.id);
+    }
 }
 void World::damagePlane(Vec2 center, float radius, float amount) {
     if (!plane_.active || plane_.crashing) return;
@@ -404,25 +427,23 @@ void World::updateSupplies(float dt) {
             plane_.position.y+=plane_.fallSpeed*dt;
             plane_.angle=std::min(1.25f,plane_.angle+dt*0.65f);
             if (auto hit=Physics::sweep(previous,plane_.position,20,*map_,{},noPlayer,0,0)) {
-                plane_.position=hit->position; plane_.active=false;
-                constexpr float radius=170;
-                emit(EventKind::PlaneCrash,plane_.position,noPlayer,radius);
-                map_->crater(plane_.position,125,52);
-                for (auto& tank : tanks_) if (tank.alive()) {
-                    const float damage=Physics::areaDamage(plane_.position,tank,radius,200,config_);
-                    if (damage>0) Physics::damage(tank,1+199*damage/200);
-                    if (!tank.alive()) emit(EventKind::Destroyed,tank.position,tank.id);
-                }
+                plane_.position=hit->position; crashPlane();
             }
         }
-        if (!plane_.crashing && plane_.bombing) {
+        if (plane_.active) for (const auto& tank : tanks_) if (tank.alive()) {
+            float contact=0;
+            if (sweepEllipse(previous,plane_.position,tank.position,{53+config_.tankHalfWidth,23+config_.tankHalfHeight},contact)) {
+                plane_.position=mix(previous,plane_.position,contact); crashPlane(); break;
+            }
+        }
+        if (plane_.active && !plane_.crashing && plane_.bombing) {
             while (nextBombTarget_<bombTargets_.size() && (plane_.position.x-bombTargets_[nextBombTarget_])*plane_.direction>=0) {
                 const float x=bombTargets_[nextBombTarget_++];
                 bombs_.push_back({nextProjectile_++,{x,plane_.position.y+22},{0,18},0});
             }
             plane_.released=nextBombTarget_==bombTargets_.size();
         }
-        if (!plane_.crashing && !plane_.bombing && !plane_.released && (plane_.position.x-plane_.targetX)*plane_.direction>=0) {
+        if (plane_.active && !plane_.crashing && !plane_.bombing && !plane_.released && (plane_.position.x-plane_.targetX)*plane_.direction>=0) {
             plane_.released=true;
             if (supplies_.size()>=8) supplies_.erase(supplies_.begin());
             supplies_.push_back({nextProjectile_++,{plane_.targetX,plane_.position.y+15},0,0,static_cast<PickupKind>(random()%3),false});

@@ -1,5 +1,6 @@
 #pragma once
 #include "World.hpp"
+#include <random>
 
 namespace tw {
 class GameSession {
@@ -10,6 +11,7 @@ public:
     bool setColor(PlayerId id, std::uint8_t color);
     bool setMode(PlayerId actor, unsigned teamSize);
     bool setSeat(PlayerId actor, PlayerId target, std::uint8_t seat);
+    bool setBotGadget(PlayerId actor, PlayerId target, GadgetKind gadget);
     bool setBotWeapon(PlayerId actor, PlayerId target, WeaponKind weapon);
     bool setWeapon(PlayerId id, WeaponKind weapon);
     bool confirmWeapon(PlayerId id, bool confirmed);
@@ -28,6 +30,7 @@ private:
     void invalidateReady();
     struct BotPlan { float nextThink{}; Input input{}; };
     std::array<BotPlan,maxPlayers> botPlans_{};
+    std::mt19937 botRandom_{std::random_device{}()};
     Config config_;
     World world_;
     std::vector<Player> players_;

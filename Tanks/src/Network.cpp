@@ -17,7 +17,7 @@ namespace tw::net {
 namespace {
 using Clock = std::chrono::steady_clock;
 using Status = sf::Socket::Status;
-enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, Rematch, Error, Weapon, Map, Mode, Seat, BotWeapon, WeaponConfirm, Gadget };
+enum class Message : std::uint8_t { Hello, Welcome, State, Input, Ready, Color, Rematch, Error, Weapon, Map, Mode, Seat, BotWeapon, WeaponConfirm, Gadget, BotGadget };
 constexpr std::uint32_t magic = 0x54414e4b;
 constexpr std::uint32_t extensionMagic = 0x54575831;
 constexpr std::uint16_t extensionVersion = 2;
@@ -537,6 +537,7 @@ struct Server::Impl {
         case Message::Color: { std::uint8_t value{}; if (p >> value) session.setColor(peer.id, value); break; }
         case Message::Mode: { std::uint8_t value{}; if (p >> value) session.setMode(peer.id,value); break; }
         case Message::Seat: { PlayerId target{}; std::uint8_t value{}; if (p >> target >> value) session.setSeat(peer.id,target,value); break; }
+        case Message::BotGadget: { PlayerId target{}; std::uint8_t value{}; if (p >> target >> value) session.setBotGadget(peer.id,target,static_cast<GadgetKind>(value)); break; }
         case Message::BotWeapon: { PlayerId target{}; std::uint8_t value{}; if (p >> target >> value) session.setBotWeapon(peer.id,target,static_cast<WeaponKind>(value)); break; }
         case Message::Rematch: if (peer.id == 0) session.rematch(); break;
         default: peer.channel.alive = false; break;
@@ -717,6 +718,7 @@ void Client::map(std::uint8_t value) { auto p=packet(Message::Map); p << value; 
 void Client::color(std::uint8_t value) { auto p = packet(Message::Color); p << value; impl_->queue(std::move(p)); }
 void Client::mode(std::uint8_t value) { auto p=packet(Message::Mode); p << value; impl_->queue(std::move(p)); }
 void Client::seat(PlayerId target,std::uint8_t value) { auto p=packet(Message::Seat); p << target << value; impl_->queue(std::move(p)); }
+void Client::botGadget(PlayerId target,GadgetKind value) { auto p=packet(Message::BotGadget); p << target << static_cast<std::uint8_t>(value); impl_->queue(std::move(p)); }
 void Client::botWeapon(PlayerId target,WeaponKind value) { auto p=packet(Message::BotWeapon); p << target << static_cast<std::uint8_t>(value); impl_->queue(std::move(p)); }
 void Client::rematch() { impl_->queue(packet(Message::Rematch)); }
 bool Client::connected() const { return impl_->channel && impl_->channel->alive; }

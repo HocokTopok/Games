@@ -21,7 +21,13 @@ std::optional<PlayerId> GameSession::addPlayer(std::string name, bool bot) {
     while (std::ranges::any_of(players_,[&](const auto& p){return p.seat==seat;})) ++seat;
     players_.push_back({id,color,static_cast<std::uint8_t>(config_.teams ? seat/(config_.playerLimit/2) : seat),true,false,bot,name.substr(0,18)});
     players_.back().seat=seat;
-    if (bot) { players_.back().weapon=selectableWeapons[(id+1)%selectableWeapons.size()]; players_.back().weaponChosen=true; players_.back().ready=true; players_.back().weaponConfirmed=true; players_.back().gadgetChosen=config_.loadoutSelection; players_.back().gadget=static_cast<GadgetKind>(id%3); }
+    if (bot) {
+        auto& pilot=players_.back();
+        pilot.weapon=selectableWeapons[(id+1)%selectableWeapons.size()];
+        pilot.weaponChosen=pilot.ready=pilot.weaponConfirmed=true;
+        pilot.gadgetChosen=config_.loadoutSelection;
+        pilot.gadget=std::uniform_int_distribution<int>(0,1)(botRandom_) ? GadgetKind::Armor : GadgetKind::Specialist;
+    }
     if (!bot && config_.teams) { invalidateReady(); fillBots(); }
     return id;
 }
@@ -65,6 +71,7 @@ bool GameSession::confirmWeapon(PlayerId id, bool confirmed) {
 bool GameSession::setGadget(PlayerId id, GadgetKind gadget) {
     if (phase_!=Phase::Lobby || static_cast<unsigned>(gadget)>2) return false;
     for (auto& p : players_) if (p.id==id && p.connected && p.weaponConfirmed) {
+        if (p.bot && gadget==GadgetKind::Jetpack) return false;
         p.gadget=gadget; p.gadgetChosen=true; p.ready=false; return true;
     }
     return false;
@@ -111,11 +118,45 @@ bool GameSession::setBotWeapon(PlayerId actor,PlayerId target,WeaponKind weapon)
     if (p==players_.end() || !p->bot || !setWeapon(target,weapon)) return false;
     p->weaponConfirmed=true; p->gadgetChosen=true; setReady(target,true); return true;
 }
+bool GameSession::setBotGadget(PlayerId actor,PlayerId target,GadgetKind gadget) {
+    if (actor!=0 || phase_!=Phase::Lobby || gadget==GadgetKind::Jetpack) return false;
+    const auto p=std::ranges::find(players_,target,&Player::id);
+    if (p==players_.end() || !p->bot || !setGadget(target,gadget)) return false;
+    setReady(target,true); return true;
+}
 void GameSession::setInput(PlayerId id, Input input) { if (id < maxPlayers) inputs_[id] = input; }
 Input GameSession::botInput(const Tank& tank) {
     const auto state=world_.snapshot(); const float time=state.elapsed;
+    // Gadget decisions run every simulation step, including between aim updates.
+    const auto useGadget=[&](Input in) {
+        in.gadget=false;
+        if (!tank.hasGadget || tank.gadget!=GadgetKind::Specialist || tank.gadgetHeld) return in;
+        if (tank.weapon==WeaponKind::Missile) {
+            for (const auto& missile : state.projectiles) if (missile.owner==tank.id && missile.weapon==WeaponKind::Missile) {
+                const Vec2 heading=missile.velocity/std::max(1.f,length(missile.velocity));
+                for (const auto& enemy : state.tanks) if (enemy.alive() && enemy.team!=tank.team) {
+                    const Vec2 delta=enemy.position-missile.position;
+                    const float forward=dot(delta,heading), lateral=std::abs(delta.x*heading.y-delta.y*heading.x);
+                    if (forward<25 || forward>240 || lateral>forward*0.22f+config_.tankHalfHeight) continue;
+                    const auto hit=Physics::sweep(missile.position,enemy.position,4.5f,world_.map(),world_.tanks(),tank.id,config_.tankHalfWidth,config_.tankHalfHeight);
+                    if (!hit || hit->tank!=enemy.id) continue;
+                    bool allyAhead=false;
+                    for (const auto& ally : state.tanks) if (ally.alive() && ally.team==tank.team) {
+                        const Vec2 a=ally.position-missile.position; const float along=dot(a,heading);
+                        allyAhead|=along>0 && along<forward && std::abs(a.x*heading.y-a.y*heading.x)<along*0.27f+config_.tankHalfWidth;
+                    }
+                    if (!allyAhead) in.gadget=true;
+                }
+            }
+        } else if (in.fire) {
+            if (tank.weapon==WeaponKind::Flare) in.gadget=!tank.specialistUsed;
+            else if (tank.weapon==WeaponKind::Napalm || tank.weapon==WeaponKind::Ricochet)
+                in.gadget=tank.gadgetCooldown<=0 && tank.gadgetRemaining<=0;
+        }
+        return in;
+    };
     auto& plan=botPlans_[tank.id];
-    if (time<plan.nextThink) return plan.input;
+    if (time<plan.nextThink) return useGadget(plan.input);
     plan.nextThink=time+0.20f+0.017f*tank.id;
     std::vector<const Tank*> enemies;
     for (const auto& other : world_.tanks()) if (other.alive() && other.team!=tank.team) enemies.push_back(&other);
@@ -148,7 +189,7 @@ Input GameSession::botInput(const Tank& tank) {
         const bool clear=(trace.hit && trace.hit->tank==target->id) || length(trace.to-point)<45;
         if (!clear) move=toward;
         const float power=tank.weapon==WeaponKind::Missile ? std::sin(time*0.8f+tank.id)*0.6f : 0;
-        return plan.input={move,aim,power,time>1 && clear && std::abs(angleDelta(tank.aim,aim))<0.10f};
+        return useGadget(plan.input={move,aim,power,time>1 && clear && std::abs(angleDelta(tank.aim,aim))<0.10f});
     }
     const float gravity=config_.gravity*(tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarGravityScale : (tank.weapon==WeaponKind::Flare ? config_.weapon.flareGravityScale : 1.f));
     const float scale=tank.weapon==WeaponKind::Mortar ? config_.weapon.mortarSpeedScale : (tank.weapon==WeaponKind::Ricochet ? config_.weapon.ricochetSpeedScale : (tank.weapon==WeaponKind::Flare ? config_.weapon.flareSpeedScale : 1.f));
@@ -201,8 +242,7 @@ Input GameSession::botInput(const Tank& tank) {
     const float powerDelta=std::clamp((bestPower-tank.power)/80.f,-1.f,1.f);
     const float tolerance=tank.weapon==WeaponKind::Mortar ? 85.f : (tank.weapon==WeaponKind::Flare ? 65.f : 65.f);
     const bool fire=time>1 && best<tolerance && std::abs(bestPower-tank.power)<65 && std::abs(angleDelta(tank.aim,bestAim))<0.07f;
-    const bool gadget=tank.hasGadget && (tank.gadget==GadgetKind::Jetpack ? (std::sin(time*0.8f+tank.id)>0.6f && tank.fuel>0.2f) : std::fmod(time+tank.id,3.f)<0.3f);
-    return plan.input={move,bestAim,powerDelta,fire,0,gadget};
+    return useGadget(plan.input={move,bestAim,powerDelta,fire});
 }
 void GameSession::step() {
     if (phase_ == Phase::Lobby) {

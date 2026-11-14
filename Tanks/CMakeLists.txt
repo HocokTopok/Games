@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(TankWars VERSION 1.8.0 LANGUAGES CXX)
+project(TankWars VERSION 1.8.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -77,6 +77,10 @@ install(DIRECTORY assets config DESTINATION .)
 
 if(TANKWARS_BUILD_TESTS)
     enable_testing()
+    add_executable(update_visual_tests tests/UpdateVisualTests.cpp)
+    target_link_libraries(update_visual_tests PRIVATE tankwars_renderer)
+    target_compile_definitions(update_visual_tests PRIVATE TANKWARS_TEST_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+    add_test(NAME update_visuals COMMAND update_visual_tests)
     add_executable(gadget_tests tests/GadgetTests.cpp)
     target_link_libraries(gadget_tests PRIVATE tankwars_core SFML::Window)
     add_test(NAME gadgets COMMAND gadget_tests)

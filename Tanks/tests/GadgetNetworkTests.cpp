@@ -34,7 +34,7 @@ void live() {
     const auto flying=*findTank(guest.latest(),0);
     require(flying.jetActive && flying.fuel<0.7f && flying.position.y<initial.position.y-60,"E input drives authoritative flight visible to guest");
     until(host,guest,[&]{return guest.latest().elapsed>1.25f;});
-    require(!findTank(guest.latest(),0)->jetActive && findTank(guest.latest(),0)->fuel>flying.fuel,"release and fuel recovery synchronize");
+    require(!findTank(guest.latest(),0)->jetActive && std::abs(findTank(guest.latest(),0)->fuel-flying.fuel)<0.04f,"release preserves airborne fuel on both peers");
 }
 void codecAndGraphics() {
     Config c=MapFactory::preset({},1); c.titanMode=true;
@@ -69,7 +69,7 @@ void codecAndGraphics() {
     render(ra,a,source); render(rb,b,decoded);
     const auto ia=a.getTexture().copyToImage(),ib=b.getTexture().copyToImage();
     require(std::equal(ia.getPixelsPtr(),ia.getPixelsPtr()+1600*900*4,ib.getPixelsPtr()),"new fire, armor debris, sparks, pellets and supernova render identically on peers");
-    require(ia.saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.0-gadgets.png"),"save new gadget effects preview");
+    require(ia.saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.1-gadgets.png"),"save new gadget effects preview");
     auto flash=source; flash.skyStrikes[0].age=c.weapon.skyWarmup*1.5f+0.001f;
     ra.resetEffects(); render(ra,a,flash);
     const auto white=a.getTexture().copyToImage();
@@ -81,9 +81,9 @@ void codecAndGraphics() {
     auto close=closeWorld.snapshot(); close.players=p; close.phase=Phase::Playing; close.elapsed=6.06f;
     close.tanks[0].position={600,600}; close.tanks[0].hp=210; close.tanks[0].velocity={72,0}; close.tanks[0].gadget=GadgetKind::Jetpack; close.tanks[0].fuel=0.63f; close.tanks[0].jetActive=true;
     close.tanks[1].position={1000,610}; close.tanks[1].armor=250;
-    ra.resetEffects(); render(ra,a,close); require(a.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.0-tank-details.png"),"save fuel and armor preview");
+    ra.resetEffects(); render(ra,a,close); require(a.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.1-tank-details.png"),"save fuel and armor preview");
     a.clear(); ra.resize(c); ra.scenery(c,2,true); ra.updateBanner(2); a.display();
-    require(a.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.0-banner.png"),"save update banner");
+    require(a.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.1-banner.png"),"save update banner");
 }
 }
 int main() { try { live(); codecAndGraphics(); std::cout<<"Gadget LAN, codec and pixel parity checks passed\n"; return 0; } catch (const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; } }

@@ -5,6 +5,23 @@ namespace tw {
 namespace {
 sf::Vector2f point(Vec2 p) { return {p.x,p.y}; }
 sf::Color opacity(sf::Color c,float a) { c.a=static_cast<std::uint8_t>(std::clamp(a,0.f,255.f)); return c; }
+float random01(std::uint32_t seed) {
+    seed^=seed>>16; seed*=0x7feb352du; seed^=seed>>15; seed*=0x846ca68bu; seed^=seed>>16;
+    return (seed&0xffffu)/65535.f;
+}
+// Layered radial falloff gives smoke soft edges without rectangular sprites.
+void haze(sf::RenderTarget& target,Vec2 center,Vec2 extent,sf::Color color,float alpha,float phase=0,float falloff=2) {
+    sf::VertexArray mesh(sf::PrimitiveType::Triangles);
+    const auto vertex=[&](int ring,int sector) {
+        const float r=ring/5.f, a=sector*2*pi/32;
+        const float warp=1+0.08f*std::sin(a*5+phase)+0.045f*std::cos(a*9-phase);
+        return sf::Vertex{point(center+Vec2{std::cos(a)*extent.x*r*warp,std::sin(a)*extent.y*r*warp}),
+            opacity(color,alpha*std::pow(std::max(0.f,1-r*r),falloff))};
+    };
+    for (int r=0;r<5;++r) for (int a=0;a<32;++a)
+        for (const auto v : {vertex(r,a),vertex(r+1,a),vertex(r+1,a+1),vertex(r,a),vertex(r+1,a+1),vertex(r,a+1)}) mesh.append(v);
+    target.draw(mesh);
+}
 struct Palette { sf::Color sky, horizon, soil, deep, edge, distant, foliage; };
 Palette palette(unsigned id) {
     switch (id) {
@@ -65,7 +82,7 @@ void Renderer::decorations(const Config& c,const Terrain& map,float time) {
         for (auto p : points) shape.setPoint(i++,point(p));
         shape.setFillColor(color); window_.draw(shape);
     };
-    const int count=c.mapId==1 ? 36 : (c.mapId==3 ? 24 : 24);
+    const int count=c.mapId==1 ? 82 : 24;
     for (int i=0;i<count;++i) {
         const float x=static_cast<float>((i*173+53)%static_cast<int>(c.worldWidth));
         const float y=map.height(x)+2, size=38+(i*37)%70;
@@ -140,6 +157,16 @@ void Renderer::decorations(const Config& c,const Terrain& map,float time) {
             }
         }
     }
+    if (c.mapId==1) for (int i=0;i<38;++i) {
+        const float x=static_cast<float>((i*269+113)%static_cast<int>(c.worldWidth)), y=map.height(x)+3;
+        const float size=8+(i*7)%12;
+        for (int lobe=0;lobe<5;++lobe) {
+            const Vec2 p{x+(lobe-2)*size*0.48f,y-size*0.35f-std::sin(lobe*1.4f+i)*size*0.15f};
+            circle(p,size*(0.45f+0.12f*(lobe%2)),{29,76,60});
+            line({p.x,y},p+Vec2{2,-size*0.3f},{67,108,72},1.2f);
+            line(p+Vec2{-3,-size*0.3f},p+Vec2{2,-size*0.4f},{91,135,83,150},1.4f);
+        }
+    }
     // Small distant silhouettes and shell bursts give the horizon life.
     for (int i=0;i<8;++i) {
         const float x=std::fmod(i*c.worldWidth/8+time*(i%2 ? 9.f : -7.f)+c.worldWidth*4,c.worldWidth);
@@ -159,10 +186,46 @@ void Renderer::decorations(const Config& c,const Terrain& map,float time) {
         for (int j=0;j<3;++j) circle({x+(j-1)*9.f,y-cycle*22-j*4},7+cycle*8,opacity(colors.distant,65*(1-cycle/2.2f)));
         if (hot>0) line({x-12,y+20},{x+12,y+20},{255,189,94,110},hot*3);
     }
-    if (c.mapId==0) for (int i=0;i<5;++i) {
-        const float x=std::fmod(time*20+i*367.f,c.worldWidth), y=map.height(x)-9;
-        ring({x,y},8,{132,111,68,180},time*2+i,2*pi,0.9f);
-        for (int j=0;j<4;++j) line({x,y},{x+std::cos(time*2+j*1.6f)*10,y+std::sin(time*2+j*1.6f)*8},{136,115,71,150});
+    if (c.mapId==0) {
+        for (int i=0;i<6;++i) {
+            const float radius=18+(i*7)%13, speed=25+i*3.1f;
+            const float x=std::fmod(time*speed+i*287.f,c.worldWidth+radius*2)-radius;
+            const float hopCycle=11+i*1.7f, hop=std::fmod(time+i*3.7f,hopCycle);
+            const float jump=hop<0.65f ? std::sin(hop/0.65f*pi)*(9+i%3*4) : 0;
+            const Vec2 center{x,map.height(x)-radius*0.88f-jump};
+            const float roll=(time*speed+i*287.f)/radius;
+            haze(window_,{x,map.height(x)-1},{radius*1.35f,4},{49,35,30},75/(1+jump*0.07f));
+            for (int strand=0;strand<9;++strand) {
+                sf::VertexArray twig(sf::PrimitiveType::LineStrip);
+                const float tilt=strand*2.39996f, flatten=0.22f+0.7f*random01(i*31+strand+1);
+                for (int knot=0;knot<=32;++knot) {
+                    const float a=knot*2*pi/32;
+                    const float rough=1+0.12f*std::sin(a*5+strand)+0.08f*std::sin(a*9+i);
+                    const Vec2 q=center+rotate(rotate({std::cos(a)*radius*rough,std::sin(a)*radius*flatten},tilt),roll);
+                    twig.append({point(q),strand%3==0 ? sf::Color{190,150,88,225} : sf::Color{111,82,48,240}});
+                }
+                window_.draw(twig);
+            }
+            for (int branch=0;branch<22;++branch) {
+                const float a=branch*2.39996f, r=radius*(0.35f+0.65f*random01(branch+i*51+99));
+                const Vec2 q=center+rotate(direction(a)*r,roll);
+                const Vec2 root=center+rotate(direction(a-0.4f)*(r*0.35f),roll);
+                line(root,q,{145,107,59,215},1.1f);
+                line(mix(root,q,0.65f),q+rotate({-4,5},a+roll),{204,161,94,170},0.8f);
+            }
+        }
+        for (int gust=0;gust<9;++gust) {
+            const float cycle=5.3f+gust*0.71f, age=std::fmod(time+gust*1.83f,cycle);
+            if (age>1.6f) continue;
+            const auto seed=static_cast<std::uint32_t>(std::floor((time+gust*1.83f)/cycle))+gust*117;
+            const float x=random01(seed+317)*c.worldWidth+age*125-100, y=map.height(x)-24-65*random01(seed+18);
+            sf::VertexArray wind(sf::PrimitiveType::LineStrip);
+            for (int knot=0;knot<=18;++knot) {
+                const float t=knot/18.f;
+                wind.append({{x+t*110,y+std::sin(t*3+age*2)*4},opacity({239,205,146},std::sin(t*pi)*std::sin(age/1.6f*pi)*78)});
+            }
+            window_.draw(wind);
+        }
     }
 }
 void Renderer::celestial(const Config& c) {
@@ -184,6 +247,34 @@ void Renderer::celestial(const Config& c) {
             crescent.append({point(center+Vec2{std::min(outer,inner),y}),{222,239,213,255}});
         }
         window_.draw(crescent);
+        return;
+    }
+    if (c.mapId==1) {
+        sf::VertexArray moon(sf::PrimitiveType::Triangles);
+        const auto sample=[&](int ring,int segment) {
+            const float r=ring/24.f, a=segment*2*pi/96, x=std::cos(a)*r, y=std::sin(a)*r;
+            const float z=std::sqrt(std::max(0.f,1-x*x-y*y));
+            float maria=0;
+            for (int sea=0;sea<9;++sea) {
+                const float sx=random01(31+sea*13)*1.4f-0.7f, sy=random01(73+sea*19)*1.4f-0.7f;
+                const float dx=(x-sx)/(0.16f+random01(sea+21)*0.22f), dy=(y-sy)/0.22f;
+                maria+=0.17f*std::exp(-dx*dx-dy*dy);
+            }
+            const float grain=0.02f*std::sin(x*119+y*73)+0.015f*std::sin(x*231-y*97);
+            const float light=0.32f+0.68f*std::max(0.f,-x*0.36f-y*0.4f+z*0.84f);
+            const float value=std::clamp((1-maria+grain)*light,0.2f,1.f);
+            return sf::Vertex{point(center+Vec2{x*radius,y*radius}),{static_cast<std::uint8_t>(217*value),static_cast<std::uint8_t>(239*value),static_cast<std::uint8_t>(246*value)}};
+        };
+        for (int r=0;r<24;++r) for (int a=0;a<96;++a)
+            for (const auto v : {sample(r,a),sample(r+1,a),sample(r+1,a+1),sample(r,a),sample(r+1,a+1),sample(r,a+1)}) moon.append(v);
+        window_.draw(moon);
+        for (int i=0;i<24;++i) {
+            const float a=i*2.39996f, r=radius*(0.15f+0.7f*random01(i+53)), size=radius*(0.018f+0.055f*random01(i+91));
+            const Vec2 crater=center+direction(a)*r;
+            circle(crater,size,{79,107,125,55});
+            ring(crater,size,{210,233,244,95},0.12f,pi*0.85f,0.78f);
+        }
+        ring(center,radius,{192,228,245,125},-pi*0.94f,pi*0.76f);
         return;
     }
     sf::VertexArray disc(sf::PrimitiveType::TriangleStrip);
@@ -210,37 +301,74 @@ void Renderer::celestial(const Config& c) {
     }
 }
 void Renderer::foregroundFog(const Config& c,const Terrain& map,float time) {
-    if (c.mapId!=2) return;
-    // Smooth, soft-edged horizontal banks surge, thin out and reverse independently.
-    // Drawn after tanks and their labels, using match time on both clients.
-    constexpr std::array<float,7> centers{0.13f,0.29f,0.43f,0.56f,0.69f,0.82f,0.92f};
-    for (int bank=0;bank<7;++bank) {
-        const float phase=bank*2.37f;
-        const float x=c.worldWidth*centers[bank]+std::sin(time*0.17f+phase)*95+std::sin(time*0.43f+phase*1.7f)*28;
-        const float surge=0.5f+0.5f*std::sin(time*0.29f+phase+0.8f*std::sin(time*0.13f+bank));
-        const float density=0.18f+0.82f*std::pow(surge,1.6f);
-        const float width=205+bank%3*48.f;
-        const float floor=map.height(x);
-        for (int layer=0;layer<4;++layer) {
-            const float height=21+layer*8.f, altitude=12+layer*21.f;
-            sf::VertexArray mist(sf::PrimitiveType::Triangles);
-            const auto vertex=[&](float u,float v) {
-                const float xx=x+u*width;
-                const float yy=floor-altitude+v*height+std::sin(u*5+time*(0.16f+bank*0.013f)+phase)*4;
-                const float clip=std::clamp((map.height(xx)+2-yy)/6.f,0.f,1.f);
-                const float strength=std::pow(std::max(0.f,1-u*u),1.4f)*std::pow(std::max(0.f,1-v*v),1.4f)*density*235*clip;
-                return sf::Vertex{{xx,yy},opacity({153,179,163},xx<0 || xx>c.worldWidth ? 0 : strength)};
-            };
-            for (int segment=0;segment<32;++segment) for (int row=0;row<8;++row) {
-                const float u=-1+segment/16.f, v=-1+row/4.f;
-                const auto a=vertex(u,v), b=vertex(u+1.f/16,v), d=vertex(u,v+0.25f), e=vertex(u+1.f/16,v+0.25f);
-                for (const auto& p : {a,b,e,a,e,d}) mist.append(p);
+    if (c.mapId!=1 && c.mapId!=2) return;
+    const bool marsh=c.mapId==2;
+    const float scale=c.worldHeight/900.f;
+    constexpr int columns=110, rows=62;
+    const float dx=c.worldWidth/columns, dy=c.worldHeight/rows;
+    sf::VertexArray mist(sf::PrimitiveType::Triangles);
+    const auto sample=[&](int col,int row) {
+        const float x=col*dx, y=row*dy, above=(map.height(x)-y)/scale;
+        // Continuous billowing volume: no hard-edged floating strips.
+        const float envelope=std::exp(-std::pow((above-48)/105,2.f))*std::clamp((above+10)/25,0.f,1.f);
+        const float flow=x/scale-time*10;
+        const float broad=0.5f+0.5f*std::sin(flow*0.006f+std::sin(time*0.12f)+above*0.009f);
+        const float billow=0.5f+0.5f*std::sin(flow*0.024f+std::sin(above*0.04f-time*0.3f)*1.7f);
+        const float fine=0.5f+0.5f*std::sin(flow*0.053f-above*0.048f+time*0.19f);
+        const float density=0.16f+0.58f*broad*broad+0.26f*billow*fine;
+        const float banks=0.65f+0.35f*std::sin(x/c.worldWidth*7*pi+time*0.17f);
+        return sf::Vertex{{x,y},opacity(marsh ? sf::Color{159,181,170} : sf::Color{127,161,169},
+            envelope*density*banks*(marsh ? 227.f : 76.f))};
+    };
+    std::array<sf::Vertex,(columns+1)*(rows+1)> grid;
+    for (int col=0;col<=columns;++col) for (int row=0;row<=rows;++row) grid[col*(rows+1)+row]=sample(col,row);
+    const auto at=[&](int col,int row) { return grid[col*(rows+1)+row]; };
+    for (int col=0;col<columns;++col) for (int row=0;row<rows;++row)
+        for (const auto v : {at(col,row),at(col+1,row),at(col+1,row+1),at(col,row),at(col+1,row+1),at(col,row+1)}) mist.append(v);
+    window_.draw(mist);
+}
+void Renderer::distantExplosions(const Config& c,float time) {
+    if (c.mapId!=3) return;
+    float start=5+35*random01(1945);
+    const auto smoke=[&](Vec2 center,Vec2 extent,sf::Color color,float alpha,float phase) {
+        haze(window_,center,extent,color,alpha,phase,0.75f);
+    };
+    constexpr std::array<float,5> sites{0.14f,0.37f,0.54f,0.68f,0.82f};
+    for (unsigned event=0;start<=time;++event) {
+        const float age=time-start;
+        if (age<33) {
+            const float scale=c.worldHeight/900.f;
+            const Vec2 base{c.worldWidth*sites[static_cast<unsigned>(random01(event+622)*4.999f)],c.worldHeight*0.68f};
+            const float rise=1-std::exp(-age*0.55f), fade=std::clamp((33-age)/12,0.f,1.f);
+            const float size=1.12f+random01(event+37)*0.25f;
+            const float height=(35+270*rise+age*0.8f)*scale*size;
+            const Vec2 cap=base-Vec2{0,height};
+            const float hot=std::exp(-age*0.35f)*0.85f;
+            glow(base-Vec2{0,35*scale},(120+age*25)*scale,{222,140,80},hot*48);
+            for (int puff=0;puff<13;++puff) {
+                const float t=puff/12.f;
+                const Vec2 center=base-Vec2{std::sin(t*7+event)*12*rise*scale,t*height};
+                smoke(center,{(25+22*t+age*1.2f)*scale,(29+15*t)*scale},{64,60,64},fade*83,age*0.12f+puff);
             }
-            window_.draw(mist);
+            // A spreading, lobed mushroom cap with an underlit inner rim.
+            for (int puff=0;puff<11;++puff) {
+                const float a=puff*2.39996f, radius=(50+90*rise+age*1.1f)*scale*size;
+                const Vec2 center=cap+Vec2{std::cos(a)*radius*0.68f,std::sin(a)*radius*0.24f};
+                smoke(center,{radius*0.76f,radius*0.48f},{72,65,65},fade*116,age*0.13f+puff);
+                if (age<9) smoke(center+Vec2{0,16*scale},{radius*0.58f,29*scale},{179,112,69},hot*110,puff);
+                for (int roll=0;roll<3;++roll) {
+                    const float a2=puff*1.83f+roll*2.1f+age*0.08f;
+                    const Vec2 lobe=center+Vec2{std::cos(a2)*radius*0.23f,std::sin(a2)*radius*0.16f};
+                    smoke(lobe,{radius*0.27f,radius*0.19f},roll==0 ? sf::Color{111,94,84} : sf::Color{53,51,56},fade*43,a2);
+                }
+            }
+            smoke(base,{(85+age*5)*scale,24*scale},{91,77,69},fade*80,age*0.1f);
         }
+        start+=5+35*random01(event+713);
     }
 }
 void Renderer::scenery(const Config& c,float time,bool showcase,const Snapshot* state) {
+    if (state) time=state->elapsed;
     window_.setView(worldView_);
     const auto colors=palette(c.mapId);
     sf::VertexArray sky(sf::PrimitiveType::TriangleStrip,4);
@@ -270,7 +398,7 @@ void Renderer::scenery(const Config& c,float time,bool showcase,const Snapshot* 
             hills.append({{x,y},opacity(colors.distant,105+layer*35.f)}); hills.append({{x,c.worldHeight},colors.deep});
         }
         window_.draw(hills);
-        const int silhouettes=c.mapId==1 ? 29 : (c.mapId==3 ? 27 : 55);
+        const int silhouettes=c.mapId==1 ? 59 : (c.mapId==3 ? 27 : 55);
         for (int i=0;i<silhouettes;++i) {
             const float x=i*c.worldWidth/(silhouettes-1), y=c.groundHeight-105+layer*30+45*std::sin(x*0.003f+layer*2)+19*std::sin(x*0.009f+layer);
             const sf::Color ink=opacity(colors.distant,125+layer*35.f);
@@ -296,6 +424,7 @@ void Renderer::scenery(const Config& c,float time,bool showcase,const Snapshot* 
             }
         }
     }
+    distantExplosions(c,time);
     decorations(c,*map,time);
     terrain(c,*map);
     // Thin drifting dust, fog and ash in front of the terrain, with no gameplay collision.
@@ -303,7 +432,7 @@ void Renderer::scenery(const Config& c,float time,bool showcase,const Snapshot* 
         const float x=std::fmod(i*193.f+time*(c.mapId==0 ? 15 : 5),c.worldWidth);
         const float y=map->height(x)-18-std::fmod(i*31.f+time*2,120.f);
         if (c.mapId==0 || c.mapId==3) circle({x,y},i%3 ? 1 : 2,opacity(colors.edge,55));
-        else line({x,y},{x+60,y},opacity(colors.horizon,12),7);
+
     }
     if (showcase) {
         Tank hero; hero.color=0; hero.position={c.worldWidth*0.72f,map->height(c.worldWidth*0.72f)-43};

@@ -145,12 +145,6 @@ void Renderer::tank(const Tank& t, const Config& c, float scale) {
     hull.setFillColor(t.alive() ? sf::Color{33,57,67} : sf::Color{24,30,37}); hull.setOutlineColor(t.alive() ? alpha(color,180) : muted); hull.setOutlineThickness(1); window_.draw(hull,states);
     rectangle({-17,-13}, {32,3}, alpha(color,t.alive() ? 220 : 30));
     rectangle({-11,-6}, {6,2}, {93,125,137}); rectangle({0,-6}, {13,2}, {93,125,137});
-    if (t.armor>0) for (int i=0;i<5;++i) {
-        const float x=-25+i*10.f;
-        rectangle({x,-15+(i%2)*2.f},{9,12},{91,112,123},{177,200,205});
-        rectangle({x+1,-13+(i%2)*2.f},{6,2},{137,161,169});
-        rectangle({x+3,-6+(i%2)*2.f},{2,2},{37,52,61});
-    }
     if (t.titan && t.alive()) {
         rectangle({-26,-11},{13,10},{15,28,40},alpha(color,210));
         rectangle({13,-11},{13,10},{15,28,40},alpha(color,210));
@@ -159,6 +153,19 @@ void Renderer::tank(const Tank& t, const Config& c, float scale) {
             rectangle({16.f + i*3,-9},{1,6},alpha(color,130 + 80*std::sin(time_*4+i)));
         }
         rectangle({-14,-18},{28,4},{63,87,98},alpha(color,130));
+    }
+    if (t.armor>0) {
+        for (int i=0;i<5;++i) {
+            const float x=-29+i*11.5f, top=-17+std::abs(i-2)*2.2f;
+            sf::ConvexShape plate(4);
+            plate.setPoint(0,{x+1,top}); plate.setPoint(1,{x+11,top-1});
+            plate.setPoint(2,{x+10,3}); plate.setPoint(3,{x-1,1});
+            plate.setFillColor({52,65,76}); plate.setOutlineColor({151,169,177}); plate.setOutlineThickness(1.1f);
+            window_.draw(plate,states);
+            rectangle({x+2,top+3},{7,2},{101,121,134});
+            rectangle({x+4,-2},{2,2},{24,35,45});
+        }
+        rectangle({-15,-21},{30,4},{60,77,89},{134,157,169});
     }
     if (!t.alive()) { rectangle({-8,-20}, {17,6}, {31,39,48}); return; }
     const auto pivot = t.position + rotate({0,-12}, t.bodyAngle) * scale;
@@ -329,16 +336,15 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
     std::erase_if(trails_,[&](const auto& entry) { return std::ranges::none_of(s.projectiles,[&](const auto& p) { return p.id == entry.first; }); });
     for (const auto& p : s.projectiles) {
         auto& trail = trails_[p.id];
-        if (trail.empty() || length(p.position - trail.back()) > 3) trail.push_back(p.position);
+        if (trail.empty() || length(p.position - trail.back().position) > 3) trail.push_back({p.position,p.bounces});
         if (trail.size() > 42) trail.erase(trail.begin());
         if (p.clusterPellet) {
-            const float speed=length(p.velocity);
-            line(p.position-p.velocity*(6.f/std::max(1.f,speed)),p.position,{255,212,134,150},1);
-            circle(p.position,1.6f,{255,240,199}); continue;
+            while (trail.size()>2 && length(p.position-trail.front().position)>170) trail.erase(trail.begin());
+            weaponProjectile(p,c,trail); continue;
         }
         if (p.weapon==WeaponKind::Mortar || p.weapon==WeaponKind::GrowingOrb || p.weapon==WeaponKind::Ricochet || p.weapon==WeaponKind::Napalm || p.weapon==WeaponKind::Flare || p.weapon==WeaponKind::Missile) { weaponProjectile(p,c,trail); continue; }
         const sf::Color color = p.napalm ? sf::Color{255,135,38} : accent;
-        for (std::size_t i = 1; i < trail.size(); ++i) line(trail[i-1],trail[i],alpha(color,180.f * static_cast<float>(i) / trail.size()),p.napalm ? 3 : 2);
+        for (std::size_t i = 1; i < trail.size(); ++i) line(trail[i-1].position,trail[i].position,alpha(color,180.f * static_cast<float>(i) / trail.size()),p.napalm ? 3 : 2);
         circle(p.position,9,alpha(color,24)); circle(p.position,5,alpha(color,95)); circle(p.position,c.weapon.projectileRadius,p.napalm ? sf::Color{255,235,156} : white);
     }
     for (const auto& t : s.tanks) {
@@ -346,10 +352,9 @@ void Renderer::battle(const Config& c, const Snapshot& s, PlayerId local, Vec2 m
         if (!t.alive()) continue;
         tankWear(t,c,*map,s.elapsed);
         if ((t.jetActive || t.canFly) && t.position.y < map->height(t.position.x) - c.tankHalfHeight - 2) {
-            const float exhaust = 16 + 9 * std::sin(time_ * 28 + t.id);
             for (float dx : {-18.f,18.f}) {
-                line(t.position + Vec2{dx,8}, t.position + Vec2{dx,8 + exhaust}, {99,187,255,95}, 10);
-                line(t.position + Vec2{dx,8}, t.position + Vec2{dx,8 + exhaust * 0.7f}, {190,239,255,230}, 3);
+                const Vec2 nozzle=t.position+rotate({dx,9},t.bodyAngle);
+                jetExhaust(nozzle,t.bodyAngle,1.f,t.id+dx*0.1f);
             }
         }
         if (t.inMud) {

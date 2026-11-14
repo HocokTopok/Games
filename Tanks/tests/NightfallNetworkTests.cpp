@@ -39,9 +39,14 @@ void run() {
     until(a,b,[&]{return std::ranges::find(b.latest().players,b.id(),&tw::Player::id)->seat==2;});
     auto bot=std::ranges::find(a.latest().players,true,&tw::Player::bot)->id;
     a.botWeapon(bot,tw::WeaponKind::Flare);
+    a.botGadget(bot,tw::GadgetKind::Specialist);
+    until(a,b,[&]{return std::ranges::find(b.latest().players,bot,&tw::Player::id)->gadget==tw::GadgetKind::Specialist;});
+    b.botGadget(bot,tw::GadgetKind::Armor);
+    a.botGadget(bot,tw::GadgetKind::Jetpack);
     a.map(2); until(a,b,[&]{return b.latest().mapSelected;});
     a.weapon(tw::WeaponKind::Mortar); b.weapon(tw::WeaponKind::Missile); a.confirmWeapon(true); b.confirmWeapon(true); a.gadget(tw::GadgetKind::Jetpack); b.gadget(tw::GadgetKind::Jetpack); a.ready(true); b.ready(true);
     until(a,b,[&]{return a.latest().phase==tw::Phase::Playing && b.latest().phase==tw::Phase::Playing;});
+    require(tw::findTank(b.latest(),bot)->gadget==tw::GadgetKind::Specialist,"host gadget choice synchronizes and rejects guest and jetpack changes");
     require(a.latest().tanks.size()==4 && b.latest().terrain==a.latest().terrain,"all four tanks and terrain synchronize");
     sf::RenderTexture ia({1600,900}),ib({1600,900}); tw::Renderer ra(ia,TANKWARS_TEST_ASSETS),rb(ib,TANKWARS_TEST_ASSETS);
     ra.settings.shake=rb.settings.shake=false;

@@ -46,7 +46,10 @@ private:
     void tankWear(const Tank& tank, const Config& config, const Terrain& map, float time);
     void glow(Vec2 position, float radius, sf::Color color, float opacity);
     void ring(Vec2 position, float radius, sf::Color color, float start = 0, float sweep = 2*pi, float squash = 1, float tilt = 0);
-    void weaponProjectile(const Projectile& projectile, const Config& config, const std::vector<Vec2>& trail);
+    struct TrailPoint { Vec2 position; std::uint8_t bounces{}; };
+    void weaponProjectile(const Projectile& projectile, const Config& config, const std::vector<TrailPoint>& trail);
+    void jetExhaust(Vec2 position, float angle, float size, float phase);
+    void distantExplosions(const Config& config, float time);
     void addWeaponEffect(const GameEvent& event);
     void weaponEffects();
     void skyStrikes(const Config& config, const Snapshot& state);
@@ -63,7 +66,7 @@ private:
     std::vector<Burst> bursts_;
     std::vector<BeamEffect> beams_;
     std::vector<WeaponEffect> weaponEffects_;
-    std::unordered_map<std::uint32_t, std::vector<Vec2>> trails_;
+    std::unordered_map<std::uint32_t, std::vector<TrailPoint>> trails_;
     std::uint32_t lastEvent_{}, lastBeam_{}, round_{};
     float time_{}, shake_{};
 };

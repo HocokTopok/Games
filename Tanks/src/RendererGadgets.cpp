@@ -19,16 +19,15 @@ void Renderer::gadgetPreview(GadgetKind kind,WeaponKind weapon,Vec2 center,float
     if (kind==GadgetKind::Jetpack) {
         for (float side : {-1.f,1.f}) {
             const Vec2 p=center+Vec2{side*22,0};
-            glow(p,26,{57,167,255},65);
-            line(p-Vec2{0,20},p+Vec2{0,5},{143,196,215},10);
-            line(p+Vec2{0,5},p+Vec2{0,30+4*std::sin(time*24)},{48,161,255,140},12);
-            line(p+Vec2{0,5},p+Vec2{0,23},{187,242,255},4);
+            line(p-Vec2{0,20},p+Vec2{0,5},{72,96,112},12);
+            line(p-Vec2{2,18},p+Vec2{-2,2},{153,183,199},3);
+            jetExhaust(p+Vec2{0,6},0,1.1f,time+side);
         }
     } else if (kind==GadgetKind::Armor) {
         for (int i=-1;i<=1;++i) {
             const Vec2 p=center+Vec2{i*25.f,-17.f+std::abs(i)*5};
-            box(p-Vec2{10,0},{22,39},{87,112,128},{175,205,216});
-            line(p+Vec2{-7,7},p+Vec2{9,7},{165,192,199},3);
+            box(p-Vec2{10,0},{22,39},{42,55,67},{117,141,156});
+            line(p+Vec2{-7,7},p+Vec2{9,7},{86,111,128},3);
             for (float y : {13.f,32.f}) circle(p+Vec2{1,y},2,{31,51,63});
         }
     } else {
@@ -37,6 +36,27 @@ void Renderer::gadgetPreview(GadgetKind kind,WeaponKind weapon,Vec2 center,float
         circle(center+Vec2{47,-24},12,{25,56,68},accent);
         text("+",center+Vec2{47,-39},24,accent,true);
     }
+}
+void Renderer::jetExhaust(Vec2 position,float angle,float size,float phase) {
+    const auto at=[&](Vec2 v) { return position+rotate(v*size,angle); };
+    const float pulse=0.88f+0.12f*std::sin(time_*43+phase*3);
+    glow(at({0,12}),34*size,{43,128,255},75);
+    sf::VertexArray plume(sf::PrimitiveType::TriangleStrip);
+    for (int row=0;row<=14;++row) {
+        const float t=row/14.f, y=t*39*pulse;
+        const float w=(1-t)*(5.5f+2*std::sin(t*12-time_*34+phase));
+        const float sway=t*t*std::sin(time_*31+phase+t*8)*3;
+        const auto ink=faded({45,140,255},(1-t)*190);
+        for (float side : {-1.f,1.f}) { const auto p=at({sway+side*w,y}); plume.append({{p.x,p.y},ink}); }
+    }
+    window_.draw(plume,sf::RenderStates(sf::BlendAdd));
+    line(at({0,0}),at({0,19*pulse}),{157,231,255,240},4*size);
+    line(at({0,0}),at({0,10*pulse}),{235,253,255},2.2f*size);
+    for (int i=0;i<3;++i) {
+        const float y=7+i*8*pulse;
+        ring(at({0,y}),size*(3.2f-i*0.7f),faded({144,223,255},170-i*40.f),0,2*pi,0.4f,angle);
+    }
+    line(at({-5,-2}),at({5,-2}),{116,154,177},3*size);
 }
 void Renderer::tankWear(const Tank& t,const Config& c,const Terrain& map,float time) {
     if (!t.alive() || !settings.particles) return;
