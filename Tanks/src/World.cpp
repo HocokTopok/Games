@@ -241,20 +241,34 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         if (activate && tank.hasGadget && tank.gadget==GadgetKind::Specialist) {
             if (tank.weapon==WeaponKind::Missile) splitMissile(tank.id);
             if (tank.gadgetCooldown<=0 && (tank.weapon==WeaponKind::Napalm || tank.weapon==WeaponKind::Ricochet)) {
-                tank.gadgetRemaining=5.f;
-                tank.gadgetCooldown=tank.weapon==WeaponKind::Napalm ? 15.f : 20.f;
+                tank.gadgetRemaining=tank.weapon==WeaponKind::Ricochet ? 3.f : 5.f;
+                tank.gadgetCooldown=tank.weapon==WeaponKind::Napalm ? 15.f : 10.f;
                 if (tank.weapon==WeaponKind::Ricochet) tank.reload/=3.f;
             }
             if (tank.weapon==WeaponKind::Flare && !tank.specialistUsed) { tank.specialistArmed=true; tank.specialistUsed=true; }
         }
         const auto previousPosition = tank.position;
         tank.inMud=map_->movementScale(tank.position.x)<1 && tank.position.y>=map_->height(tank.position.x)-config_.tankHalfHeight-1;
-        const float movement = std::clamp(in.move, -1.f, 1.f) * config_.tankSpeed * dt * (tank.inMud ? map_->movementScale(tank.position.x) : 1.f);
+        float movement = std::clamp(in.move, -1.f, 1.f) * config_.tankSpeed * dt * (tank.inMud ? map_->movementScale(tank.position.x) : 1.f);
+        const float lift = tank.jetActive ? 1.f : (tank.canFly ? std::clamp(in.lift, -1.f, 1.f) : 0.f);
+        const bool driving=refuelOnGround && lift<=0;
+        if (driving && std::abs(movement)>0.000001f) {
+            // Spend the movement budget on the complete terrain tangent, not just X.
+            // Solve against actual sampled heights so sharp slopes and crater rims obey it too.
+            const float budget=std::abs(movement), sign=movement>0 ? 1.f : -1.f;
+            const float startHeight=map_->height(tank.position.x);
+            float lo=0, hi=budget;
+            for (int iteration=0;iteration<20;++iteration) {
+                const float along=(lo+hi)*0.5f;
+                const float rise=map_->height(tank.position.x+sign*along)-startHeight;
+                if (std::hypot(along,rise)>budget) hi=along; else lo=along;
+            }
+            movement=sign*lo;
+        }
         const float x = std::clamp(tank.position.x + movement, config_.tankHalfWidth + 8, config_.worldWidth - config_.tankHalfWidth - 8);
         tank.track += (x - tank.position.x) / 8.f;
         const float floor = map_->height(x) - config_.tankHalfHeight;
         {
-            const float lift = tank.jetActive ? 1.f : (tank.canFly ? std::clamp(in.lift, -1.f, 1.f) : 0.f);
             const bool grounded = tank.position.y >= map_->height(tank.position.x) - config_.tankHalfHeight - 0.5f && tank.verticalVelocity >= 0;
             if (grounded && lift > 0 && !tank.jetActive) tank.verticalVelocity = -config_.jumpSpeed;
             if (grounded && lift <= 0 && floor-tank.position.y<=3.f) {
@@ -285,7 +299,7 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         bool triple=false;
         if (in.fire && tank.reload<=0 && tank.weapon==WeaponKind::Mortar && tank.hasGadget && tank.gadget==GadgetKind::Specialist) {
             randomState_^=randomState_<<13; randomState_^=randomState_>>17; randomState_^=randomState_<<5;
-            triple=randomState_%10==0;
+            triple=randomState_%100<15;
         }
         const std::size_t pellets = tank.weapon == WeaponKind::Napalm || triple ? 3 : 1;
         const bool guiding=tank.weapon==WeaponKind::Missile && std::ranges::any_of(projectiles_,[&](const auto& p) { return p.owner==tank.id && p.weapon==WeaponKind::Missile; });
@@ -333,6 +347,9 @@ void World::step(const std::array<Input, maxPlayers>& inputs) {
         for (unsigned i=0;i<result.ricochetCount;++i) emit(EventKind::Ricochet,result.ricochets[i],p.owner,Cannon::radius(p,config_.weapon),p.weapon==WeaponKind::Ricochet ? Cannon::ricochetDamage(p.bounces)/100.f : Cannon::orbDamage(p.age,config_.weapon)/100.f);
         if (result.hit) {
             if (p.clusterPellet) {
+                emit(EventKind::PelletImpact,result.hit->position,p.owner,14);
+                const float speed=length(p.velocity);
+                events_.back().normal=speed>0.01f ? p.velocity*(-1.f/speed) : Vec2{0,-1};
                 const float amount=clusterDamage(p.travel)*p.damageScale;
                 if (result.hit->tank==planeTarget) damagePlane(plane_.position,1,amount);
                 for (auto& tank : tanks_) if (tank.id==result.hit->tank && tank.alive()) {

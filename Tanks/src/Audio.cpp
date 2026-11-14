@@ -110,6 +110,7 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
     const auto* me=findTank(s,local);
     a.listener=me ? me->position : Vec2{c.worldWidth/2,c.groundHeight};
     if (s.round!=a.round) { reset(); a.round=s.round; }
+    unsigned pelletSounds=0;
     for (const auto& e : s.events) {
         if (e.id<=a.lastEvent) continue;
         a.lastEvent=e.id;
@@ -127,6 +128,9 @@ void SoundSystem::update(float dt,const Snapshot& s,const Config& c,PlayerId loc
         case EventKind::MortarImpact: cue=Cue::MortarBlast; gain=0.95f; priority=4; a.duck=1; break;
         case EventKind::SkyStrike: cue=Cue::MortarBlast; gain=1; priority=4; a.duck=1; break;
         case EventKind::OrbImpact: cue=Cue::OrbBlast; gain=0.5f+e.intensity*0.45f; priority=3; a.duck=std::max(a.duck,0.7f); break;
+        case EventKind::PelletImpact:
+            if (++pelletSounds>3) continue;
+            cue=Cue::MetalScrape; gain=0.16f; priority=0; break;
         case EventKind::Ricochet: cue=Cue::Ricochet; gain=0.48f; priority=1; break;
         case EventKind::Destroyed: cue=Cue::Destroyed; gain=1; priority=5; a.duck=1; break;
         default: break;

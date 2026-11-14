@@ -26,7 +26,7 @@ std::optional<PlayerId> GameSession::addPlayer(std::string name, bool bot) {
         pilot.weapon=selectableWeapons[(id+1)%selectableWeapons.size()];
         pilot.weaponChosen=pilot.ready=pilot.weaponConfirmed=true;
         pilot.gadgetChosen=config_.loadoutSelection;
-        pilot.gadget=std::uniform_int_distribution<int>(0,1)(botRandom_) ? GadgetKind::Armor : GadgetKind::Specialist;
+        pilot.gadget=static_cast<GadgetKind>(std::uniform_int_distribution<int>(0,2)(botRandom_));
     }
     if (!bot && config_.teams) { invalidateReady(); fillBots(); }
     return id;
@@ -71,7 +71,6 @@ bool GameSession::confirmWeapon(PlayerId id, bool confirmed) {
 bool GameSession::setGadget(PlayerId id, GadgetKind gadget) {
     if (phase_!=Phase::Lobby || static_cast<unsigned>(gadget)>2) return false;
     for (auto& p : players_) if (p.id==id && p.connected && p.weaponConfirmed) {
-        if (p.bot && gadget==GadgetKind::Jetpack) return false;
         p.gadget=gadget; p.gadgetChosen=true; p.ready=false; return true;
     }
     return false;
@@ -119,7 +118,7 @@ bool GameSession::setBotWeapon(PlayerId actor,PlayerId target,WeaponKind weapon)
     p->weaponConfirmed=true; p->gadgetChosen=true; setReady(target,true); return true;
 }
 bool GameSession::setBotGadget(PlayerId actor,PlayerId target,GadgetKind gadget) {
-    if (actor!=0 || phase_!=Phase::Lobby || gadget==GadgetKind::Jetpack) return false;
+    if (actor!=0 || phase_!=Phase::Lobby) return false;
     const auto p=std::ranges::find(players_,target,&Player::id);
     if (p==players_.end() || !p->bot || !setGadget(target,gadget)) return false;
     setReady(target,true); return true;
@@ -127,10 +126,30 @@ bool GameSession::setBotGadget(PlayerId actor,PlayerId target,GadgetKind gadget)
 void GameSession::setInput(PlayerId id, Input input) { if (id < maxPlayers) inputs_[id] = input; }
 Input GameSession::botInput(const Tank& tank) {
     const auto state=world_.snapshot(); const float time=state.elapsed;
+    auto& plan=botPlans_[tank.id];
     // Gadget decisions run every simulation step, including between aim updates.
     const auto useGadget=[&](Input in) {
         in.gadget=false;
-        if (!tank.hasGadget || tank.gadget!=GadgetKind::Specialist || tank.gadgetHeld) return in;
+        if (!tank.hasGadget) return in;
+        if (tank.gadget==GadgetKind::Jetpack) {
+            const bool grounded=tank.position.y>=world_.map().height(tank.position.x)-config_.tankHalfHeight-0.5f && tank.verticalVelocity>=0;
+            if (plan.jetStage==JetStage::Ready && grounded && tank.fuel>=0.9f && time>plan.nextFlight+1.2f) {
+                const float spend=std::uniform_real_distribution<float>(0.35f,0.55f)(botRandom_);
+                plan.boostEndFuel=tank.fuel-spend; plan.jetStage=JetStage::Boost;
+            }
+            if (plan.jetStage==JetStage::Boost && tank.fuel<=plan.boostEndFuel) {
+                plan.jetStage=JetStage::Coast;
+                plan.nextJetStage=time+std::uniform_real_distribution<float>(0.85f,1.1f)(botRandom_);
+            }
+            if (plan.jetStage==JetStage::Coast && time>=plan.nextJetStage) plan.jetStage=JetStage::Finish;
+            if (plan.jetStage==JetStage::Finish && tank.fuel<=0) {
+                plan.jetStage=JetStage::Refuel; plan.nextFlight=time+1.5f;
+            }
+            if (plan.jetStage==JetStage::Refuel && grounded && tank.fuel>=0.9f) plan.jetStage=JetStage::Ready;
+            in.gadget=plan.jetStage==JetStage::Boost || plan.jetStage==JetStage::Finish;
+            return in;
+        }
+        if (tank.gadget!=GadgetKind::Specialist || tank.gadgetHeld) return in;
         if (tank.weapon==WeaponKind::Missile) {
             for (const auto& missile : state.projectiles) if (missile.owner==tank.id && missile.weapon==WeaponKind::Missile) {
                 const Vec2 heading=missile.velocity/std::max(1.f,length(missile.velocity));
@@ -155,7 +174,6 @@ Input GameSession::botInput(const Tank& tank) {
         }
         return in;
     };
-    auto& plan=botPlans_[tank.id];
     if (time<plan.nextThink) return useGadget(plan.input);
     plan.nextThink=time+0.20f+0.017f*tank.id;
     std::vector<const Tank*> enemies;
@@ -206,7 +224,7 @@ Input GameSession::botInput(const Tank& tank) {
             const float lead=std::min(shot.age,3.f);
             Vec2 expected=target->position+velocity*lead+Vec2{spread,0};
             expected.x=std::clamp(expected.x,35.f,config_.worldWidth-35.f);
-            if (!target->canFly) expected.y=world_.map().height(expected.x)-config_.tankHalfHeight;
+            if (!target->canFly && !target->jetActive && target->position.y>=world_.map().height(target->position.x)-config_.tankHalfHeight-1) expected.y=world_.map().height(expected.x)-config_.tankHalfHeight;
             if (!ceilingOnly || ceilingBounce) closest=std::min(closest,length(shot.position-expected));
             if (result.hit || result.expired) break;
         }
@@ -226,7 +244,7 @@ Input GameSession::botInput(const Tank& tank) {
                 if (delta.x<0) angle=-pi-angle;
                 const float flight=x/std::max(20.f,std::abs(speed*std::cos(angle)));
                 point=target->position+velocity*std::min(flight,3.f)+Vec2{spread,0};
-                if (!target->canFly) point.y=world_.map().height(std::clamp(point.x,0.f,config_.worldWidth))-config_.tankHalfHeight;
+                if (!target->canFly && !target->jetActive && target->position.y>=world_.map().height(target->position.x)-config_.tankHalfHeight-1) point.y=world_.map().height(std::clamp(point.x,0.f,config_.worldWidth))-config_.tankHalfHeight;
             }
             if (reachable) assess(angle,power);
         }

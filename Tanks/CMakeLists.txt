@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(TankWars VERSION 1.8.1 LANGUAGES CXX)
+project(TankWars VERSION 1.8.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,6 +38,8 @@ add_library(tankwars_audio_synth src/AudioSynth.cpp)
 target_include_directories(tankwars_audio_synth PUBLIC include)
 add_library(tankwars_renderer src/Renderer.cpp src/RendererWeapons.cpp src/RendererBattlefield.cpp src/RendererGadgets.cpp)
 target_link_libraries(tankwars_renderer PUBLIC tankwars_core SFML::Graphics)
+add_executable(tankwars_icon_tool EXCLUDE_FROM_ALL tools/RenderAppIcon.cpp)
+target_link_libraries(tankwars_icon_tool PRIVATE tankwars_renderer)
 add_executable(tank_wars src/main.cpp src/Game.cpp src/Audio.cpp)
 target_link_libraries(tank_wars PRIVATE tankwars_network tankwars_audio_synth tankwars_renderer SFML::Graphics SFML::Audio)
 target_compile_definitions(tank_wars PRIVATE TANKWARS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}" TANKWARS_VERSION="${PROJECT_VERSION}")
@@ -69,7 +71,9 @@ if(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/Info.plist "${APP_DIR}/Contents/Info.plist"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${APP_DIR}/Contents/Resources/assets"
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/assets "${APP_DIR}/Contents/Resources/assets"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/config "${APP_DIR}/Contents/Resources/config")
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/TankWars.icns "${APP_DIR}/Contents/Resources/TankWars.icns"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/config "${APP_DIR}/Contents/Resources/config"
+        COMMAND ${CMAKE_COMMAND} -E touch "${APP_DIR}")
     install(DIRECTORY "${APP_DIR}" DESTINATION .)
 endif()
 install(TARGETS tank_wars RUNTIME DESTINATION .)

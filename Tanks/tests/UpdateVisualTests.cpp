@@ -14,7 +14,7 @@ void run() {
     sf::RenderTexture a({1600,900}),b({1600,900});
     Renderer ra(a,TANKWARS_TEST_ASSETS),rb(b,TANKWARS_TEST_ASSETS);
     ra.settings.shake=rb.settings.shake=false;
-    const auto output=std::filesystem::temp_directory_path()/"tankwars-1.8.1-previews";
+    const auto output=std::filesystem::temp_directory_path()/"tankwars-1.8.2-previews";
     std::filesystem::create_directories(output);
     const auto render=[](Renderer& renderer,sf::RenderTexture& target,const Config& c,const Snapshot& s,float localTime) {
         target.clear(); renderer.resize(c); renderer.scenery(c,localTime,false,&s);
@@ -59,6 +59,15 @@ void run() {
         ra.update(1.f/120); render(ra,a,c,detail,0);
     }
     require(a.getTexture().copyToImage().saveToFile(output/"weapon-and-tank-details.png"),"save ricochet trail stages, orange cluster tracers, armor and twin jets");
+    ra.resetEffects(); rb.resetEffects();
+    detail.projectiles.clear(); detail.events.clear();
+    detail.tanks[0].jetActive=false; detail.tanks[0].position={400,590}; detail.tanks[0].hp=90;
+    detail.tanks[1].position={700,600}; detail.tanks[1].hp=210;
+    for (unsigned i=0;i<3;++i) detail.events.push_back({500+i,EventKind::PelletImpact,{1000+i*120.f,500},0,14,1,direction(pi-i*pi/4)});
+    ra.observe(detail); rb.observe(detail); ra.update(0.12f); rb.update(0.12f);
+    const auto impactA=render(ra,a,c,detail,0), impactB=render(rb,b,c,detail,300);
+    require(same(impactA,impactB),"directional pellet explosions and critically damaged tank effects match on peers");
+    require(impactA.saveToFile(output/"critical-damage-and-pellet-impacts.png"),"save thick smoke, bright sparks, central fire and directional impacts");
     std::cout<<"Updated atmosphere parity and animation checks passed; previews: "<<output<<'\n';
 }
 }

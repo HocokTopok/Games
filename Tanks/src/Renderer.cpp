@@ -93,6 +93,7 @@ void Renderer::observe(const Snapshot& state) {
             for (int i=0;i<5;++i) armorShards_.push_back({e.position+Vec2{(i-2)*10.f,-10},{(i-2)*75.f,-130.f-(i%3)*45},0,(i-2)*2.3f});
             continue;
         }
+        if (e.kind==EventKind::PelletImpact) { addWeaponEffect(e); continue; }
         if (e.kind==EventKind::ClusterBurst) { bursts_.push_back({e.position,{255,211,132},0,0.35f,22}); continue; }
         if (e.kind==EventKind::SupplyLanded || e.kind==EventKind::Pickup || e.kind==EventKind::FlareImpact) { bursts_.push_back({e.position,e.kind==EventKind::Pickup ? accent : (e.kind==EventKind::FlareImpact ? sf::Color{255,188,64} : sf::Color{219,188,114}),0,0.7f,45}); continue; }
         if (e.kind==EventKind::SkyStrike) { bursts_.push_back({e.position,{255,211,93},0,0.7f,e.radius*1.5f}); shake_=std::max(shake_,7.f); continue; }
@@ -238,9 +239,10 @@ void Renderer::tank(const Tank& t, const Config& c, float scale) {
     }
     line(t.position + rotate({-18,-16},t.bodyAngle) * scale, t.position + rotate({-20,-29},t.bodyAngle) * scale, alpha(color,150), scale);
 }
-void Renderer::flame(Vec2 position, float size, float phase, bool blue) {
-    const float flicker = 0.8f + 0.2f * std::sin(time_ * 19 + phase);
-    const float sway = std::sin(time_ * 11 + phase) * size * 0.3f;
+void Renderer::flame(Vec2 position, float size, float phase, bool blue, float animationTime) {
+    const float clock=animationTime>=0 ? animationTime : time_;
+    const float flicker = 0.8f + 0.2f * std::sin(clock * 19 + phase);
+    const float sway = std::sin(clock * 11 + phase) * size * 0.3f;
     circle(position + Vec2{0,-size * 0.3f}, size * 1.15f, blue ? sf::Color{42,148,255,28} : sf::Color{255,95,20,17});
     sf::ConvexShape shape(5);
     shape.setPoint(0, sfv(position + Vec2{-size * 0.5f,0}));
@@ -251,7 +253,7 @@ void Renderer::flame(Vec2 position, float size, float phase, bool blue) {
     shape.setFillColor(blue ? sf::Color{40,158,255,225} : sf::Color{255,100,25,205}); window_.draw(shape);
     circle(position + Vec2{0,-size * 0.3f}, size * 0.3f, blue ? sf::Color{179,244,255,250} : sf::Color{255,218,94,235});
     if (settings.particles) {
-        const float rise = std::fmod(time_ * 25 + phase * 9, 55.f);
+        const float rise = std::fmod(clock * 25 + phase * 9, 55.f);
         circle(position + Vec2{sway * 2,-size - rise}, 3 + rise * 0.08f, alpha({94,91,105}, 55 - rise));
     }
 }

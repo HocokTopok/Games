@@ -103,23 +103,27 @@ void napalm() {
 }
 void mortar() {
     int triples=0;
-    for (unsigned seed=1;seed<=250;++seed) {
+    for (unsigned seed=1;seed<=2000;++seed) {
         World world(config(),seed); world.reset(players(WeaponKind::Mortar,GadgetKind::Specialist));
         tank(world).position={800,300}; tank(world).aim=-pi/2;
         steps(world,1,{0,-pi/2,0,true}); const auto p=world.snapshot().projectiles;
         require(p.size()==1 || p.size()==3,"mortar produces one shell or a triple");
         if (p.size()==3) { ++triples; require(near(angleDelta(std::atan2(p[1].velocity.y,p[1].velocity.x),std::atan2(p[0].velocity.y,p[0].velocity.x)),-0.035f,0.001f) && near(angleDelta(std::atan2(p[1].velocity.y,p[1].velocity.x),std::atan2(p[2].velocity.y,p[2].velocity.x)),0.035f,0.001f),"bonus shells spread symmetrically"); }
     }
-    require(triples>12 && triples<39,"seeded mortar trials approximate ten percent");
+    require(triples>250 && triples<350,"seeded mortar trials approximate fifteen percent");
 }
 void ricochet() {
     World world(config(),123); world.reset(players(WeaponKind::Ricochet,GadgetKind::Specialist));
     tank(world).position={800,300}; tank(world).aim=-pi/2;
     steps(world,1,{0,-pi/2,0,true,0,true});
-    require(near(tank(world).reload,config().weapon.ricochetReload/3) && near(tank(world).gadgetRemaining,5),"overdrive triples fire rate for five seconds");
-    steps(world,601,{0,-pi/2,0,false,0,true});
-    require(tank(world).gadgetRemaining==0 && tank(world).gadgetCooldown>14,"holding E cannot reactivate overdrive");
+    require(near(tank(world).reload,config().weapon.ricochetReload/3) && near(tank(world).gadgetRemaining,3),"overdrive triples fire rate for three seconds");
+    steps(world,361,{0,-pi/2,0,false,0,true});
+    require(tank(world).gadgetRemaining==0 && near(tank(world).gadgetCooldown,7),"holding E cannot reactivate overdrive");
     tank(world).reload=0; steps(world,1,{0,-pi/2,0,true}); require(near(tank(world).reload,config().weapon.ricochetReload),"base fire rate returns");
+    steps(world,841,{0,-pi/2,0,false,0,true});
+    require(tank(world).gadgetRemaining==0 && tank(world).gadgetCooldown==0,"overdrive becomes ready ten seconds after activation without repeating while held");
+    steps(world,1); steps(world,1,{0,-pi/2,0,false,0,true});
+    require(near(tank(world).gadgetRemaining,3) && near(tank(world).gadgetCooldown,10),"released and pressed E starts the next ten-second cycle");
     require(Cannon::ricochetDamage(0)==10 && Cannon::ricochetDamage(1)==25 && Cannon::ricochetDamage(2)==40 && Cannon::ricochetDamage(3)==55,"new ricochet balance");
 }
 void cluster() {
@@ -144,6 +148,9 @@ void cluster() {
     require(clusterDamage(0)==25 && clusterDamage(100)==20 && clusterDamage(200)==17.5f && clusterDamage(300)==15 && clusterDamage(2000)==15,"piecewise linear pellet falloff");
     auto& target=tank(world,1); target.position={850,300};
     steps(world,60,{0,0}); require(target.hp<1000 && world.snapshot().terrain==terrain,"pellets damage tanks without craters");
+    const auto impact=world.snapshot();
+    const auto hit=std::ranges::find(impact.events,EventKind::PelletImpact,&GameEvent::kind);
+    require(hit!=impact.events.end() && near(length(hit->normal),1,0.001f) && hit->normal.x< -0.9f,"pellet impacts carry an effect directed opposite to incoming velocity");
 }
 void planeContact() {
     for (bool movingTank : {false,true}) {
@@ -169,8 +176,7 @@ void botGadgets() {
     const auto roster=lobby.snapshot();
     const auto bot=std::ranges::find(roster.players,true,&Player::bot)->id;
     require(!lobby.setBotGadget(1,bot,GadgetKind::Armor) && !lobby.setBotGadget(0,0,GadgetKind::Armor),"only host may change a bot gadget");
-    require(!lobby.setBotGadget(0,bot,GadgetKind::Jetpack),"bots never equip jetpacks");
-    for (const auto& p : lobby.snapshot().players) if (p.bot) require(p.gadget!=GadgetKind::Jetpack,"random bot loadout excludes jetpacks");
+    require(lobby.setBotGadget(0,bot,GadgetKind::Jetpack),"host can now equip a bot jetpack");
     require(lobby.setBotGadget(0,bot,GadgetKind::Specialist) && lobby.setBotWeapon(0,bot,WeaponKind::Napalm),"host chooses bot specialist and weapon");
     const auto chosen=lobby.snapshot();
     require(std::ranges::find(chosen.players,bot,&Player::id)->gadget==GadgetKind::Specialist,"weapon cycling preserves bot gadget");
@@ -188,6 +194,49 @@ void botGadgets() {
         require(used,"each active bot specialist is used during a viable attack");
     }
 }
+void botJetpack() {
+    auto c=config(); GameSession game(c); game.addPlayer("HOST"); game.addPlayer("BOT",true);
+    game.setBotWeapon(0,1,WeaponKind::Mortar); game.setBotGadget(0,1,GadgetKind::Jetpack); game.setReady(0,true); game.step();
+    auto& tanks=const_cast<std::vector<Tank>&>(game.world().tanks());
+    bool boosted=false,paused=false,resumed=false,empty=false,relaunched=false;
+    float pauseStart=0, pauseEnd=0;
+    for (int i=0;i<120*20 && !relaunched;++i) {
+        for (auto& t : tanks) { t.hp=1000; t.shieldRemaining=10; }
+        game.step(); const auto state=game.snapshot(); const auto& bot=*findTank(state,1);
+        if (!boosted && bot.jetActive) boosted=true;
+        if (boosted && !paused && !bot.jetActive) {
+            paused=true; pauseStart=state.elapsed;
+            require(bot.fuel<0.65f && bot.fuel>0.43f,"bot first spends more than thirty percent but preserves the rest of its fuel");
+        }
+        if (paused && !resumed && bot.jetActive) {
+            resumed=true; pauseEnd=state.elapsed;
+            require(pauseEnd-pauseStart>=0.84f && pauseEnd-pauseStart<=1.12f,"bot coasts for about one second between burns");
+        }
+        if (resumed && bot.fuel==0) empty=true;
+        if (empty && bot.jetActive) relaunched=true;
+    }
+    require(boosted && paused && resumed && empty && relaunched,"bot uses two burns, empties its tank, lands, refuels and flies again");
+}
+void slopeSpeed() {
+    for (std::uint8_t map=0;map<4;++map) for (float move : {-1.f,1.f}) {
+        auto c=MapFactory::preset(config(),map); World world(c,123); world.reset(players(WeaponKind::Mortar,GadgetKind::Armor));
+        auto& t=tank(world); float start=120, steepest=0;
+        for (float x=120;x<c.worldWidth-120;x+=4) {
+            const float slope=std::abs(world.map().slope(x));
+            if (slope>steepest) { steepest=slope; start=x; }
+        }
+        t.position={start,world.map().height(start)-c.tankHalfHeight}; t.verticalVelocity=0;
+        for (int step=0;step<120;++step) {
+            const auto before=t.position;
+            const float expected=c.tankSpeed*world.map().movementScale(before.x);
+            steps(world,1,{move,t.aim});
+            const float speed=length(t.position-before)/c.fixedStep;
+            if (step==0 && steepest>0.65f) require(std::abs(t.velocity.x)<c.tankSpeed*0.85f,"steep slopes reduce horizontal speed instead of boosting vertical travel");
+            require(std::abs(speed-expected)<0.13f,"ground movement preserves total vector speed on steep terrain in both directions");
+            require(std::abs(t.position.y-(world.map().height(t.position.x)-c.tankHalfHeight))<0.01f,"driving stays attached to the slope");
+        }
+    }
+}
 void solar() {
     auto c=config(); World world(c,123); world.reset(players(WeaponKind::Flare,GadgetKind::Specialist));
     tank(world).aim=pi/2;
@@ -203,4 +252,4 @@ void solar() {
     steps(world,1,{0,pi/2,0,false,0,true}); require(!tank(world).specialistArmed,"supernova usable once per round");
 }
 }
-int main() { try { selection(); armor(); jet(); napalm(); mortar(); ricochet(); cluster(); planeContact(); botGadgets(); solar(); std::cout<<"Gadget simulation and selection checks passed\n"; return 0; } catch (const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; } }
+int main() { try { selection(); armor(); jet(); napalm(); mortar(); ricochet(); cluster(); planeContact(); botGadgets(); botJetpack(); slopeSpeed(); solar(); std::cout<<"Gadget simulation and selection checks passed\n"; return 0; } catch (const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; } }

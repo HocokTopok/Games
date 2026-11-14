@@ -4,6 +4,17 @@
 namespace tw {
 namespace {
 sf::Color faded(sf::Color c,float alpha) { c.a=static_cast<std::uint8_t>(std::clamp(alpha,0.f,255.f)); return c; }
+void softSmoke(sf::RenderTarget& target,Vec2 p,float radius,sf::Color color,float alpha) {
+    sf::VertexArray mesh(sf::PrimitiveType::Triangles);
+    const auto vertex=[&](int ring,int segment) {
+        const float r=ring/3.f, a=segment*2*pi/24;
+        const Vec2 q=p+direction(a)*(radius*r);
+        return sf::Vertex{{q.x,q.y},faded(color,alpha*std::pow(std::max(0.f,1-r*r),1.2f))};
+    };
+    for (int r=0;r<3;++r) for (int a=0;a<24;++a)
+        for (const auto v : {vertex(r,a),vertex(r+1,a),vertex(r+1,a+1),vertex(r,a),vertex(r+1,a+1),vertex(r,a+1)}) mesh.append(v);
+    target.draw(mesh);
+}
 }
 void Renderer::updateBanner(float time) {
     const Vec2 center{1338,112};
@@ -14,6 +25,35 @@ void Renderer::updateBanner(float time) {
     sf::Text label(font_,"GADGETS ADDED!",32); const auto bounds=label.getLocalBounds();
     label.setOrigin(bounds.position+bounds.size/2.f); label.setPosition({center.x,center.y});
     label.setRotation(sf::degrees(-7)); label.setScale({pulse,pulse}); label.setFillColor({180,255,197}); window_.draw(label);
+}
+void Renderer::applicationIcon() {
+    window_.setView(sf::View(sf::FloatRect({0,0},{1024,1024})));
+    sf::VertexArray badge(sf::PrimitiveType::TriangleFan), border(sf::PrimitiveType::LineStrip);
+    badge.append({{512,512},{36,67,78}});
+    constexpr std::array<Vec2,4> corners{{{756,268},{756,756},{268,756},{268,268}}};
+    for (int corner=0;corner<4;++corner) for (int step=0;step<=24;++step) {
+        const float angle=-pi/2+corner*pi/2+step*pi/48;
+        const Vec2 p=corners[corner]+direction(angle)*204;
+        badge.append({{p.x,p.y},{10,24,34}});
+        border.append({{p.x,p.y},{83,133,143,160}});
+    }
+    badge.append(badge[1]); border.append(border[0]);
+    window_.draw(badge); window_.draw(border);
+    glow({470,700},370,{64,171,155},28);
+    for (int i=0;i<3;++i) {
+        sf::CircleShape shadow(260.f-i*30,80);
+        shadow.setOrigin({260.f-i*30,260.f-i*30}); shadow.setPosition({460,790}); shadow.setScale({1.15f,0.17f});
+        shadow.setFillColor({2,9,14,static_cast<std::uint8_t>(50+i*15)}); window_.draw(shadow);
+    }
+    Config c; Tank hero; hero.position={456,710}; hero.aim=-pi/4;
+    hero.weapon=WeaponKind::Mortar; hero.titan=true; hero.hp=hero.maxHp=1000;
+    constexpr float scale=10.8f;
+    tank(hero,c,scale);
+    const Vec2 muzzle=hero.position+Vec2{0,-12*scale}+direction(hero.aim)*(c.weapon.barrelLength*scale);
+    for (int i=0;i<10;++i) {
+        const Vec2 p=muzzle+Vec2{std::sin(i*0.7f)*15+i*1.5f,-12-i*15.f};
+        softSmoke(window_,p,13+i*4.2f,{163,180,184},100*(1-i/11.f));
+    }
 }
 void Renderer::gadgetPreview(GadgetKind kind,WeaponKind weapon,Vec2 center,float time) {
     if (kind==GadgetKind::Jetpack) {
@@ -71,26 +111,33 @@ void Renderer::tankWear(const Tank& t,const Config& c,const Terrain& map,float t
             box(p,{2.2f+0.5f*(i%2),1.8f},faded(soil,190*(1-age)));
         }
     }
-    if (t.hp<500) for (int i=0;i<11;++i) {
-        const float age=std::fmod(time*0.75f+i/11.f+t.id*0.17f,1.f);
-        const float drift=std::sin(i*2.37f)*12;
-        const Vec2 p=t.position+Vec2{-8+drift*age-t.velocity.x*age*0.22f,-19-age*95};
-        const auto grey=static_cast<std::uint8_t>(39+(i%4)*9);
-        circle(p,3+age*13,faded({grey,grey,static_cast<std::uint8_t>(grey+4)},130*std::pow(1-age,2.4f)));
+    if (t.healthRatio()<0.5f) for (int i=0;i<27;++i) {
+        const float age=std::fmod(time*0.68f+i/27.f+t.id*0.17f,1.f);
+        const float drift=std::sin(i*2.37f)*23+std::sin(time*0.9f+i)*5;
+        const Vec2 p=t.position+Vec2{-5+drift*age-t.velocity.x*age*0.27f,-17-age*113};
+        const auto grey=static_cast<std::uint8_t>(32+(i%4)*8);
+        softSmoke(window_,p,6+age*22,{grey,grey,static_cast<std::uint8_t>(grey+5)},195*std::pow(1-age,1.55f));
     }
-    if (t.hp<250) {
+    if (t.healthRatio()<0.25f) {
         const int cycle=static_cast<int>(std::floor(time)); const float age=time-std::floor(time);
-        if (age<0.22f) {
+        if (age<0.3f) {
             constexpr std::array<Vec2,3> places{{{-19,-9},{7,-18},{19,-3}}};
             const Vec2 base=t.position+rotate(places[(cycle+t.id)%3],t.bodyAngle);
             const float flicker=std::sin(time*119)>-0.5f ? 1.f : 0.4f;
-            Vec2 previous=base-Vec2{6,3};
-            for (int j=1;j<=5;++j) {
-                const Vec2 next=base+Vec2{-6+j*2.4f,((j+cycle)%2 ? -3.f : 3.f)+std::sin(time*91+j)*2};
-                line(previous,next,faded({68,170,255},180*flicker),2.1f);
-                line(previous,next,faded({202,242,255},250*flicker),0.7f); previous=next;
+            glow(base,19,{59,161,255},95);
+            Vec2 previous=base-Vec2{9,5};
+            for (int j=1;j<=7;++j) {
+                const Vec2 next=base+Vec2{-9+j*2.8f,((j+cycle)%2 ? -5.f : 5.f)+std::sin(time*91+j)*3};
+                line(previous,next,faded({68,170,255},240*flicker),3.5f);
+                line(previous,next,faded({228,250,255},255*flicker),1.4f); previous=next;
             }
         }
+    }
+    if (t.healthRatio()<0.1f) {
+        const Vec2 engine=t.position+rotate({-2,-13},t.bodyAngle);
+        glow(engine,37,{255,98,22},65);
+        flame(engine+Vec2{-4,2},14,t.id*7.f+0.5f,false,time);
+        flame(engine+Vec2{5,0},11,t.id*7.f+2.2f,false,time);
     }
 }
 }

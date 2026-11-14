@@ -23,7 +23,7 @@ void run() {
 }
 void preview(const char* path) {
     const std::vector<tw::sound::Cue> cues{tw::sound::Cue::OrbShot,tw::sound::Cue::Ricochet,tw::sound::Cue::OrbBlast,
-        tw::sound::Cue::MortarShot,tw::sound::Cue::MortarWhistle,tw::sound::Cue::MortarBlast,tw::sound::Cue::Thruster};
+        tw::sound::Cue::MortarShot,tw::sound::Cue::MortarWhistle,tw::sound::Cue::MortarBlast,tw::sound::Cue::Thruster,tw::sound::Cue::MetalScrape};
     std::vector<std::int16_t> samples;
     for (auto cue : cues) {
         const auto clip=tw::sound::synthesize(cue);

@@ -67,9 +67,9 @@ void maps() {
 void mudMovement() {
     auto c=tw::MapFactory::preset({},2); c.spawnInset=c.worldWidth*0.31f;
     tw::World world(c); world.reset(players(tw::WeaponKind::Napalm,tw::WeaponKind::Mortar));
-    const float x=world.tanks()[0].position.x;
+    const auto before=world.tanks()[0].position;
     std::array<tw::Input,tw::maxPlayers> input{}; input[0].move=1; world.step(input);
-    require(world.tanks()[0].inMud && near(world.tanks()[0].position.x-x,c.tankSpeed*c.fixedStep*0.48f,0.001f),"mud slows actual tank movement");
+    require(world.tanks()[0].inMud && near(tw::length(world.tanks()[0].position-before),c.tankSpeed*c.fixedStep*0.48f,0.001f),"mud slows actual tank movement");
 }
 void weapons() {
     tw::Config c; c.hillHeight=0; c.titanMode=true;

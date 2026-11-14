@@ -208,6 +208,15 @@ void Renderer::skyStrikes(const Config& c,const Snapshot& state) {
     }
 }
 void Renderer::addWeaponEffect(const GameEvent& e) {
+    if (e.kind==EventKind::PelletImpact) {
+        weaponEffects_.push_back({e.position,e.kind,0,0.34f,e.radius,e.intensity,e.id,e.normal});
+        if (settings.particles) for (unsigned i=0;i<7;++i) {
+            const float angle=std::atan2(e.normal.y,e.normal.x)+(variation(e.id,i+30)-0.5f)*0.85f;
+            const float life=0.12f+variation(e.id,i+71)*0.17f;
+            particles_.push_back({e.position,direction(angle)*(75+variation(e.id,i+90)*150),{255,176,73},life,life,1.2f});
+        }
+        return;
+    }
     const bool mortar=e.kind==EventKind::MortarImpact || e.kind==EventKind::PlaneCrash || e.kind==EventKind::BombImpact, bounce=e.kind==EventKind::Ricochet;
     weaponEffects_.push_back({e.position,e.kind,0,bounce ? 0.55f : (mortar ? 3.1f+0.4f*variation(e.id,71) : 1.35f),e.radius,e.intensity,e.id,e.normal});
     shake_=std::max(shake_,bounce ? 1.4f : (mortar ? 5.2f : 2+3*e.intensity));
@@ -227,6 +236,26 @@ void Renderer::addWeaponEffect(const GameEvent& e) {
 void Renderer::weaponEffects() {
     for (const auto& e : weaponEffects_) {
         const float t=e.age/e.duration;
+        if (e.kind==EventKind::PelletImpact) {
+            const float expand=1-std::exp(-e.age*24), hot=std::pow(1-t,1.6f);
+            const Vec2 out=e.normal, side{-out.y,out.x};
+            const float reach=(36+variation(e.seed,11)*20)*expand;
+            sf::VertexArray flash(sf::PrimitiveType::TriangleStrip);
+            for (int row=0;row<=12;++row) {
+                const float u=row/12.f, width=(2+7*std::sin(u*pi))*hot;
+                const Vec2 center=e.position+out*(reach*u);
+                const auto ink=fade({255,static_cast<std::uint8_t>(185-75*u),35},210*hot*(1-u));
+                for (float sign : {-1.f,1.f}) flash.append({point(center+side*(width*sign)),ink});
+            }
+            window_.draw(flash,sf::RenderStates(sf::BlendAdd));
+            glow(e.position+out*(reach*0.22f),15,{255,130,38},125*hot);
+            line(e.position,e.position+out*(reach*0.7f),fade({255,235,168},235*hot*hot),2.8f*hot);
+            for (unsigned i=0;i<5;++i) {
+                const Vec2 at=e.position+out*(reach*(0.18f+i*0.19f))+side*((variation(e.seed,i+91)-0.5f)*9);
+                circle(at,1.5f+t*3,fade({83,79,77},65*std::sin(pi*t)));
+            }
+            continue;
+        }
         const bool missile=e.kind==EventKind::MissileImpact;
         const bool mortar=e.kind==EventKind::MortarImpact || e.kind==EventKind::PlaneCrash || e.kind==EventKind::BombImpact, bounce=e.kind==EventKind::Ricochet;
         const sf::Color color=(mortar || missile) ? sf::Color{255,137,49} : sf::Color{156,130,255};

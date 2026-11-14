@@ -23,7 +23,7 @@ constexpr std::uint32_t extensionMagic = 0x54575831;
 constexpr std::uint16_t extensionVersion = 2;
 constexpr std::uint32_t capabilityMagic = 0x54574331, healthCapability = 1, weaponCapability = 2, battlefieldCapability = 4, skyCapability = 8, missileCapability = 16, rulesCapability = 32, airRaidCapability = 64, gadgetCapability = 128;
 constexpr std::uint32_t gadgetMagic=0x47445731;
-constexpr std::uint16_t gadgetVersion=1;
+constexpr std::uint16_t gadgetVersion=2;
 constexpr std::uint32_t airRaidMagic=0x41495231;
 constexpr std::uint16_t airRaidVersion=1;
 constexpr std::uint32_t rulesMagic=0x52555731;
@@ -297,7 +297,7 @@ bool readState(sf::Packet& p, Snapshot& s) {
             }
             for (auto& event : s.events) {
                 std::uint8_t kind{}; p >> kind >> event.radius >> event.intensity;
-                if (!p || kind>static_cast<std::uint8_t>(EventKind::ClusterBurst) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
+                if (!p || kind>static_cast<std::uint8_t>(EventKind::PelletImpact) || !std::isfinite(event.radius) || event.radius<0 || event.radius>400 ||
                     !std::isfinite(event.intensity) || event.intensity<0 || event.intensity>1) return false;
                 event.kind=static_cast<EventKind>(kind);
             }

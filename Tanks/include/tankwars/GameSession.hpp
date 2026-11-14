@@ -28,7 +28,12 @@ private:
     Input botInput(const Tank& tank);
     void fillBots();
     void invalidateReady();
-    struct BotPlan { float nextThink{}; Input input{}; };
+    enum class JetStage { Ready, Boost, Coast, Finish, Refuel };
+    struct BotPlan {
+        float nextThink{}; Input input{};
+        JetStage jetStage{JetStage::Ready};
+        float boostEndFuel{}, nextJetStage{}, nextFlight{};
+    };
     std::array<BotPlan,maxPlayers> botPlans_{};
     std::mt19937 botRandom_{std::random_device{}()};
     Config config_;

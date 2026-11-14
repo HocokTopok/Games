@@ -40,7 +40,7 @@ struct Input {
     bool gadget{};
 };
 enum class Phase : std::uint8_t { Lobby, Playing, Victory };
-enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike, MissileImpact, PlaneCrash, BombImpact, ArmorBreak, ClusterBurst };
+enum class EventKind : std::uint8_t { Shot, Impact, Destroyed, NapalmImpact, MortarImpact, OrbImpact, Ricochet, SupplyLanded, Pickup, FlareImpact, SkyStrike, MissileImpact, PlaneCrash, BombImpact, ArmorBreak, ClusterBurst, PelletImpact };
 // GrowingOrb is retained only for the legacy preset/protocol; the menu has one ricochet weapon.
 enum class WeaponKind : std::uint8_t { Cannon, Laser, Napalm, Mortar, GrowingOrb, Ricochet, Flare, Missile };
 enum class GadgetKind : std::uint8_t { Jetpack, Armor, Specialist };

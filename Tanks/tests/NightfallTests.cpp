@@ -63,12 +63,16 @@ void botCombat() {
         game.setWeapon(0,tw::WeaponKind::Mortar); game.setWeapon(1,kind); game.setReady(0,true); game.setReady(1,true); game.step();
         unsigned shots=0; std::uint32_t last=0;
         const float x=game.snapshot().tanks[1].position.x;
-        for (int i=0;i<120*30;++i) {
+        // Terrain travel now has a fixed total speed; larger maps need more approach time.
+        const int encounterTicks=static_cast<int>(120*30*c.worldWidth/1600);
+        for (int i=0;i<encounterTicks;++i) {
             // Keep the encounter alive to exercise every weapon's repeated decisions.
             for (auto& t : const_cast<std::vector<tw::Tank>&>(game.world().tanks())) { t.shieldRemaining=10; t.hp=1000; }
             game.setInput(0,{std::sin(i/120.f*1.1f)>0 ? 0.7f : -0.7f,-0.6f,0,false}); game.step();
             for (const auto& e : game.snapshot().events) if (e.id>last) { if (e.kind==tw::EventKind::Shot && e.player==1) ++shots; last=e.id; }
         }
+        if (shots==0 || std::abs(game.snapshot().tanks[1].position.x-x)<=20)
+            std::cerr<<"Bot scenario: map="<<unsigned(map)<<" weapon="<<tw::weaponName(kind)<<" shots="<<shots<<" moved="<<game.snapshot().tanks[1].position.x-x<<'\n';
         require(shots>0 && std::abs(game.snapshot().tanks[1].position.x-x)>20,"each bot weapon moves and finds shots against a moving target on every terrain");
     }
 }

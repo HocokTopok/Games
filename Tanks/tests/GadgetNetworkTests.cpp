@@ -43,7 +43,7 @@ void codecAndGraphics() {
     for (auto& v : p) { v.weaponChosen=v.weaponConfirmed=v.gadgetChosen=true; v.seat=v.id; }
     p[0].gadget=GadgetKind::Specialist; p[1].gadget=GadgetKind::Armor;
     World world(c,123); world.reset(p); auto source=world.snapshot(); source.players=p; source.phase=Phase::Playing; source.elapsed=6.06f;
-    auto& first=source.tanks[0]; first.hp=210; first.position={800,650}; first.blueBurn=true; first.burnRemaining=2; first.gadgetRemaining=7; first.gadgetCooldown=12; first.velocity={72,0};
+    auto& first=source.tanks[0]; first.hp=90; first.position={800,650}; first.blueBurn=true; first.burnRemaining=2; first.gadgetRemaining=7; first.gadgetCooldown=12; first.velocity={72,0};
     source.tanks[1].position={1100,600}; source.tanks[1].armor=165;
     source.projectiles.push_back(Cannon::fire(first,c.weapon,90)); source.projectiles.back().blueFire=true; source.projectiles.back().damageScale=2.25f;
     source.projectiles.push_back({91,1,{1000,500},{1000,-30},0.2f}); source.projectiles.back().clusterPellet=true; source.projectiles.back().travel=250;
@@ -52,11 +52,13 @@ void codecAndGraphics() {
     source.skyStrikes.push_back({101,0,{1700,world.map().height(1700)},1.05f,230,1.5f,true});
     source.events.push_back({110,EventKind::ArmorBreak,{1100,600},1,30,1});
     source.events.push_back({111,EventKind::ClusterBurst,{1000,500},1,22,1});
+    source.events.push_back({112,EventKind::PelletImpact,{1040,480},0,14,1,{-0.8f,-0.6f}});
     sf::Packet wire; net::writeState(wire,source,true); Snapshot decoded;
     require(net::readState(wire,decoded),"new gadget snapshot decodes");
     require(decoded.players[0].gadget==GadgetKind::Specialist && decoded.players[0].weaponConfirmed && decoded.players[0].gadgetChosen,"lobby stage fields roundtrip");
     require(decoded.tanks[1].armor==165 && decoded.tanks[0].blueBurn && decoded.tanks[0].gadgetCooldown==12,"armor and skill state roundtrip");
     require(decoded.projectiles[0].blueFire && decoded.projectiles[0].damageScale==2.25f && decoded.projectiles[1].clusterPellet && decoded.projectiles[1].travel==250 && decoded.projectiles[2].empowered,"all projectile modifiers roundtrip");
+    require(decoded.events.back().kind==EventKind::PelletImpact && decoded.events.back().normal.x== -0.8f && decoded.events.back().normal.y== -0.6f,"directional pellet impact survives network encoding");
     require(decoded.fires[0].blueFire && decoded.skyStrikes[0].empowered && decoded.skyStrikes[0].radius==230,"fire priority and doubled beam survive codec");
     auto bad=source; bad.tanks[0].fuel=std::numeric_limits<float>::quiet_NaN(); sf::Packet invalid; net::writeState(invalid,bad,true); Snapshot rejected;
     require(!net::readState(invalid,rejected),"nonfinite gadget fuel is rejected");
@@ -69,7 +71,7 @@ void codecAndGraphics() {
     render(ra,a,source); render(rb,b,decoded);
     const auto ia=a.getTexture().copyToImage(),ib=b.getTexture().copyToImage();
     require(std::equal(ia.getPixelsPtr(),ia.getPixelsPtr()+1600*900*4,ib.getPixelsPtr()),"new fire, armor debris, sparks, pellets and supernova render identically on peers");
-    require(ia.saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.1-gadgets.png"),"save new gadget effects preview");
+    require(ia.saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.2-gadgets.png"),"save new gadget effects preview");
     auto flash=source; flash.skyStrikes[0].age=c.weapon.skyWarmup*1.5f+0.001f;
     ra.resetEffects(); render(ra,a,flash);
     const auto white=a.getTexture().copyToImage();
@@ -81,9 +83,9 @@ void codecAndGraphics() {
     auto close=closeWorld.snapshot(); close.players=p; close.phase=Phase::Playing; close.elapsed=6.06f;
     close.tanks[0].position={600,600}; close.tanks[0].hp=210; close.tanks[0].velocity={72,0}; close.tanks[0].gadget=GadgetKind::Jetpack; close.tanks[0].fuel=0.63f; close.tanks[0].jetActive=true;
     close.tanks[1].position={1000,610}; close.tanks[1].armor=250;
-    ra.resetEffects(); render(ra,a,close); require(a.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.1-tank-details.png"),"save fuel and armor preview");
+    ra.resetEffects(); render(ra,a,close); require(a.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.2-tank-details.png"),"save fuel and armor preview");
     a.clear(); ra.resize(c); ra.scenery(c,2,true); ra.updateBanner(2); a.display();
-    require(a.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.1-banner.png"),"save update banner");
+    require(a.getTexture().copyToImage().saveToFile(std::filesystem::temp_directory_path()/"tankwars-1.8.2-banner.png"),"save update banner");
 }
 }
 int main() { try { live(); codecAndGraphics(); std::cout<<"Gadget LAN, codec and pixel parity checks passed\n"; return 0; } catch (const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; } }

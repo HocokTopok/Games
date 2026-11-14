@@ -60,6 +60,10 @@ Clip synthesize(Cue cue) {
             value=0.45*chirp(t,2200,230,0.07)*decay(t,0.18)+mid*0.4*decay(t,0.08); break;
         case Cue::Impact:
             value=0.7*chirp(t,175,48,0.08)*decay(t,0.21)+mid*1.5*decay(t,0.13)+low*2*decay(t,0.3); break;
+        case Cue::MetalScrape:
+            value=(high*0.65+(mid-low)*1.1)*(0.6+0.4*std::sin(tau*61*t))*decay(t,0.075);
+            value+=(0.18*chirp(t,3100,1050,0.06)+0.15*std::sin(tau*2137*t)+0.1*std::sin(tau*3293*t))*decay(t,0.095);
+            break;
         case Cue::Ui:
             value=0.35*std::sin(tau*950*t)*decay(t,0.025)+0.15*std::sin(tau*1425*t)*decay(t,0.04); break;
         case Cue::Victory:

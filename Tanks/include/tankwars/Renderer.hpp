@@ -16,6 +16,7 @@ public:
     void scenery(const Config& config, float time, bool showcase = false, const Snapshot* state = nullptr);
     void battle(const Config& config, const Snapshot& state, PlayerId local, Vec2 mouse, bool cursor);
     void updateBanner(float time);
+    void applicationIcon();
     void gadgetPreview(GadgetKind kind, WeaponKind weapon, Vec2 center, float time);
     void weaponPreview(WeaponKind kind, Vec2 center, float time);
     void mapPreview(std::uint8_t id, Vec2 position, Vec2 size);
@@ -42,7 +43,7 @@ private:
     void perkIcon(PickupKind kind, Vec2 position, float size, sf::Color color, float rotation = 0);
     void terrain(const Config& config, const Terrain& map);
     void effects();
-    void flame(Vec2 position, float size, float phase, bool blue = false);
+    void flame(Vec2 position, float size, float phase, bool blue = false, float animationTime = -1);
     void tankWear(const Tank& tank, const Config& config, const Terrain& map, float time);
     void glow(Vec2 position, float radius, sf::Color color, float opacity);
     void ring(Vec2 position, float radius, sf::Color color, float start = 0, float sweep = 2*pi, float squash = 1, float tilt = 0);

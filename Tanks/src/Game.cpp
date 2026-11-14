@@ -216,7 +216,7 @@ void Game::lobby(Vec2 mouse) {
                     const auto index=found==selectableWeapons.end() ? 0 : (found-selectableWeapons.begin()+1)%selectableWeapons.size();
                     if (client_) client_->botWeapon(p.id,selectableWeapons[index]); else solo_->setBotWeapon(local,p.id,selectableWeapons[index]);
                 } else if (pressed && local==0 && p.bot && press.x>=x+432 && press.x<x+602) {
-                    const auto gadget=p.gadget==GadgetKind::Armor ? GadgetKind::Specialist : GadgetKind::Armor;
+                    const auto gadget=static_cast<GadgetKind>((static_cast<unsigned>(p.gadget)+1)%3);
                     if (client_) client_->botGadget(p.id,gadget); else solo_->setBotGadget(local,p.id,gadget);
                 } else if (pressed && (local==0 || p.id==local)) draggedPlayer_=p.id;
             } else renderer_.text("OPEN",{x+14,y+7},18,Renderer::muted);
